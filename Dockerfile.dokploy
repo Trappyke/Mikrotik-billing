@@ -1,5 +1,8 @@
 FROM node:18-alpine
 
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
 # Install nginx and supervisor
 RUN apk add --no-cache nginx supervisor
 

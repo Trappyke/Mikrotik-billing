@@ -26,6 +26,8 @@ const coreMigrations = [
   `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(64)`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT false`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
 
   // Settings table for application-wide settings
   `CREATE TABLE IF NOT EXISTS settings (

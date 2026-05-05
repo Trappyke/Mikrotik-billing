@@ -1787,6 +1787,9 @@ module.exports.query = async function (text, params) {
     }
     if (lower.includes("from users") && lower.includes("where id")) {
       const user = store.users.find((u) => u.id === params[params.length - 1]);
+      if (lower.includes("select *")) {
+        return { rows: user ? [user] : [] };
+      }
       return {
         rows: user
           ? [
@@ -1795,6 +1798,7 @@ module.exports.query = async function (text, params) {
                 email: user.email,
                 name: user.name,
                 role: user.role,
+                avatar_url: user.avatar_url,
                 created_at: user.created_at,
               },
             ]
@@ -1807,12 +1811,15 @@ module.exports.query = async function (text, params) {
       };
     }
     if (lower.includes("insert into users")) {
+      const isGoogleOauth = lower.includes("google_id");
       const user = {
         id: params[0],
         email: params[1],
-        password_hash: params[2],
-        name: params[3],
-        role: params[4],
+        password_hash: isGoogleOauth ? "" : params[2],
+        name: isGoogleOauth ? params[2] : params[3],
+        role: isGoogleOauth ? "staff" : params[4],
+        google_id: isGoogleOauth ? params[3] : null,
+        avatar_url: isGoogleOauth ? params[4] : null,
         two_factor_secret: null,
         two_factor_enabled: false,
         created_at: new Date().toISOString(),
@@ -1846,6 +1853,10 @@ module.exports.query = async function (text, params) {
         }
         if (lower.includes("two_factor_enabled")) {
           user.two_factor_enabled = lower.includes("two_factor_enabled = true");
+        }
+        if (lower.includes("google_id")) {
+          user.google_id = params[0];
+          user.avatar_url = params[1];
         }
         return { rows: [] };
       }

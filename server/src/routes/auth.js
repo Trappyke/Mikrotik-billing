@@ -10,6 +10,7 @@ const JWT_EXPIRES = process.env.JWT_EXPIRES || "7d";
 const logger = require("../utils/logger");
 const { authLimiter } = require("../middleware/rateLimiter");
 const { audit } = require("../utils/audit");
+const { OAuth2Client } = require("google-auth-library");
 
 // Valid RBAC roles
 const VALID_ROLES = [
@@ -122,7 +123,10 @@ router.post("/login", authLimiter, async (req, res) => {
         });
       }
 
-      const isValid = authenticator.verify({ token: two_factor_code, secret: user.rows[0].two_factor_secret });
+      const isValid = authenticator.verify({
+        token: two_factor_code,
+        secret: user.rows[0].two_factor_secret,
+      });
 
       if (!isValid) {
         return res.status(401).json({ error: "Invalid 2FA code" });
@@ -290,7 +294,11 @@ router.post("/2fa/setup", authenticate, async (req, res) => {
       req.user.id,
     ]);
 
-    const otpauth = authenticator.keyuri(req.user.email, "MikroTik Billing", secret);
+    const otpauth = authenticator.keyuri(
+      req.user.email,
+      "MikroTik Billing",
+      secret,
+    );
     const qrCode = await QRCode.toDataURL(otpauth);
 
     res.json({ secret, qrCode });
@@ -310,7 +318,10 @@ router.post("/2fa/enable", authenticate, async (req, res) => {
       [req.user.id],
     );
     const secret = result.rows[0]?.two_factor_secret;
-    console.log("[2FA ENABLE] Secret from DB:", secret ? secret.substring(0,10)+"..." : "MISSING");
+    console.log(
+      "[2FA ENABLE] Secret from DB:",
+      secret ? secret.substring(0, 10) + "..." : "MISSING",
+    );
     console.log("[2FA ENABLE] Code received:", code);
 
     if (!secret) return res.status(400).json({ error: "Setup 2FA first" });
@@ -365,6 +376,91 @@ router.get("/2fa/status", authenticate, async (req, res) => {
   } catch (e) {
     logger.error("2FA status error", { error: e.message });
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── GOOGLE OAUTH ───
+router.post("/google", authLimiter, async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential)
+      return res.status(400).json({ error: "Missing credential" });
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId)
+      return res.status(500).json({ error: "Google OAuth not configured" });
+
+    const client = new OAuth2Client(clientId);
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: clientId,
+    });
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
+
+    if (!email)
+      return res.status(400).json({ error: "Email not provided by Google" });
+
+    const db = getDb();
+    let user = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+
+    if (user.rows.length === 0) {
+      // Create new user
+      const id = uuidv4();
+      await db.query(
+        `INSERT INTO users (id, email, name, role, google_id, avatar_url, password_hash)
+         VALUES ($1, $2, $3, 'staff', $4, $5, '')`,
+        [id, email, name || email.split("@")[0], googleId, picture || ""],
+      );
+      user = await db.query("SELECT * FROM users WHERE id = $1", [id]);
+    } else {
+      // Update google_id and avatar_url for existing user if not set
+      if (!user.rows[0].google_id) {
+        await db.query(
+          "UPDATE users SET google_id = $1, avatar_url = $2 WHERE id = $3",
+          [googleId, picture || "", user.rows[0].id],
+        );
+        user = await db.query("SELECT * FROM users WHERE id = $1", [
+          user.rows[0].id,
+        ]);
+      }
+    }
+
+    // Update last login
+    await db.query(
+      "UPDATE users SET last_login_at = CURRENT_TIMESTAMP, is_online = true WHERE id = $1",
+      [user.rows[0].id],
+    );
+
+    const token = jwt.sign(
+      {
+        id: user.rows[0].id,
+        email: user.rows[0].email,
+        role: user.rows[0].role,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES },
+    );
+
+    logger.info("Google OAuth login", {
+      email,
+      userId: user.rows[0].id,
+      isNew: !user.rows[0].google_id,
+    });
+
+    res.json({
+      user: {
+        id: user.rows[0].id,
+        email: user.rows[0].email,
+        name: user.rows[0].name,
+        role: user.rows[0].role,
+        picture: user.rows[0].avatar_url,
+      },
+      token,
+    });
+  } catch (e) {
+    logger.error("Google OAuth error", { error: e.message });
+    res.status(500).json({ error: "OAuth failed" });
   }
 });
 
