@@ -404,6 +404,14 @@ const startServer = async () => {
       logger.warn("Frontend dist not found, skipping static file serving");
     }
 
+    // Serve hosted captive portals (public, no auth required)
+    const portalsDir = path.join(__dirname, "public", "portals");
+    if (!fs.existsSync(portalsDir)) {
+      fs.mkdirSync(portalsDir, { recursive: true });
+    }
+    app.use("/portals", express.static(portalsDir));
+    logger.info("Serving captive portals from", { path: portalsDir });
+
     // Protected routes (require authentication)
     // Each route has auth middleware applied individually
     const {

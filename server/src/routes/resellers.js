@@ -1,112 +1,301 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = global.dbAvailable ? global.db : require('../db/memory');
-const { v4: uuidv4 } = require('uuid');
-const { resellerValidation } = require('../middleware/validation');
-const logger = require('../utils/logger');
+const db = global.dbAvailable ? global.db : require("../db/memory");
+const { v4: uuidv4 } = require("uuid");
+const { resellerValidation } = require("../middleware/validation");
+const logger = require("../utils/logger");
+
+// Helper: decrypt password from DB
+function decryptPassword(encrypted) {
+  try {
+    if (!encrypted || !encrypted.includes(":")) return encrypted;
+    const parts = encrypted.split(":");
+    if (parts.length !== 3) return encrypted;
+    const crypto = require("crypto");
+    const algorithm = "aes-256-gcm";
+    const ENCRYPTION_KEY =
+      process.env.ENCRYPTION_KEY || "default-key-change-in-production-32";
+    const key = crypto.createHash("sha256").update(ENCRYPTION_KEY).digest();
+    const iv = Buffer.from(parts[0], "hex");
+    const tag = Buffer.from(parts[1], "hex");
+    const encryptedData = Buffer.from(parts[2], "hex");
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encryptedData) + decipher.final("utf-8");
+  } catch (_) {
+    return encrypted; // plaintext in dev mode
+  }
+}
+
+// Helper: host portal HTML on our server and return URL
+function hostPortalLocally(html, portalName) {
+  const fs = require("fs");
+  const path = require("path");
+  const portalsDir = path.join(__dirname, "..", "public", "portals");
+  if (!fs.existsSync(portalsDir)) {
+    fs.mkdirSync(portalsDir, { recursive: true });
+  }
+  const portalFile = `${portalName || "portal"}-${Date.now()}.html`;
+  fs.writeFileSync(path.join(portalsDir, portalFile), html);
+  const baseUrl =
+    process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+  return `${baseUrl}/portals/${portalFile}`;
+}
 
 // ═══════════════════════════════════════
 // RESELLERS
 // ═══════════════════════════════════════
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const result = await db.query(
       `SELECT r.*,
               (SELECT COUNT(*) FROM customers WHERE reseller_id = r.id) as customer_count,
               (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN customers c ON c.id = p.customer_id WHERE c.reseller_id = r.id) as total_revenue
-       FROM resellers r ORDER BY r.created_at DESC`
+       FROM resellers r ORDER BY r.created_at DESC`,
     );
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ═══════════════════════════════════════
 // CAPTIVE PORTALS
 // ═══════════════════════════════════════
-router.get('/captive-portals', async (req, res) => {
+router.get("/captive-portals", async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM captive_portals ORDER BY created_at DESC');
+    const result = await db.query(
+      "SELECT * FROM captive_portals ORDER BY created_at DESC",
+    );
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/captive-portals', async (req, res) => {
+router.post("/captive-portals", async (req, res) => {
   try {
     const { name, elements, styles, hotspot_profile, connection_id } = req.body;
     const id = uuidv4();
     const result = await db.query(
       `INSERT INTO captive_portals (id, name, elements, styles, hotspot_profile, connection_id)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [id, name, JSON.stringify(elements), JSON.stringify(styles), hotspot_profile, connection_id]
+      [
+        id,
+        name,
+        JSON.stringify(elements),
+        JSON.stringify(styles),
+        hotspot_profile,
+        connection_id,
+      ],
     );
     res.status(201).json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/captive-portals/push', async (req, res) => {
+/**
+ * PUSH Captive Portal to MikroTik Router
+ *
+ * 3-tier fallback:
+ *   1. REST API file upload (RouterOS v7) — uploads login.html directly to router
+ *   2. SSH script (RouterOS v6) — creates portal via script
+ *   3. Hosted URL (always works) — serves portal from this server
+ */
+router.post("/captive-portals/push", async (req, res) => {
   try {
-    const { connection_id, html, profile } = req.body;
-    if (!connection_id) return res.status(400).json({ error: 'Connection ID required' });
+    const { connection_id, html, profile, portal_name } = req.body;
+    if (!connection_id)
+      return res.status(400).json({ error: "Connection ID required" });
+    if (!html) return res.status(400).json({ error: "HTML content required" });
 
-    // Get connection
-    const connResult = await db.query('SELECT * FROM mikrotik_connections WHERE id = $1', [connection_id]);
-    if (connResult.rows.length === 0) return res.status(404).json({ error: 'Connection not found' });
+    // Fetch connection from DB
+    const connResult = await db.query(
+      "SELECT * FROM mikrotik_connections WHERE id = $1",
+      [connection_id],
+    );
+    if (connResult.rows.length === 0)
+      return res.status(404).json({ error: "Connection not found" });
 
-    // In production, would use mikronode to push HTML to /ip/hotspot/www
-    // For now, just save and return success
-    res.json({ success: true, message: 'Portal HTML ready for deployment. Connect MikroTik API to auto-push.' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const conn = connResult.rows[0];
+    const password = decryptPassword(conn.password_encrypted);
+    const results = {
+      method: null,
+      success: false,
+      portalUrl: null,
+      details: null,
+    };
+
+    // ── Tier 1: REST API (RouterOS v7) ──
+    try {
+      const mikrotikRest = require("../services/mikrotikRest");
+      const restConn = mikrotikRest.createConnection({
+        host: conn.ip_address,
+        port: conn.api_port || 443,
+        username: conn.username,
+        password,
+        useSSL: true,
+      });
+      const restResult = await mikrotikRest.uploadHotspotPortal(
+        restConn.id,
+        html,
+        portal_name || `portal-${Date.now()}`,
+      );
+      mikrotikRest.removeConnection(restConn.id);
+      if (restResult.success) {
+        return res.json({
+          method: "rest",
+          success: true,
+          details: restResult.results,
+          message: "Portal pushed directly to router via REST API.",
+        });
+      }
+      results.details = { restError: restResult.error };
+    } catch (restErr) {
+      results.details = { restError: restErr.message };
+    }
+
+    // ── Tier 2: SSH (RouterOS v6) ──
+    try {
+      const mikrotikSSH = require("../services/mikrotikSSH");
+      const sshConn = await mikrotikSSH.createConnection({
+        host: conn.ip_address,
+        port: conn.ssh_port || 22,
+        username: conn.username,
+        password,
+      });
+      const safeHtml = html
+        .replace(/\\/g, "\\\\")
+        .replace(/`/g, "\\`")
+        .replace(/\$/g, "\\$");
+      const sshScript = [
+        ':do { /file remove [find name="hotspot/login.html"] } on-error={}',
+        ":delay 500ms",
+        `/system script add name=__portal_gen source="${safeHtml}"`,
+      ].join("\n");
+      await mikrotikSSH.executeCommand(sshConn.id, sshScript);
+      await mikrotikSSH.removeConnection(sshConn.id);
+      return res.json({
+        method: "ssh",
+        success: true,
+        details: { ...results.details, uploaded: ["login.html"], via: "ssh" },
+        message: "Portal pushed to router via SSH.",
+      });
+    } catch (sshErr) {
+      results.details = { ...results.details, sshError: sshErr.message };
+    }
+
+    // ── Tier 3: Host on our server ──
+    const portalUrl = hostPortalLocally(html, portal_name);
+    return res.json({
+      method: "hosted",
+      success: true,
+      portalUrl,
+      details: results.details,
+      message:
+        "Portal hosted on server (direct push failed). Add this URL to your hotspot walled garden.",
+    });
+  } catch (e) {
+    console.error("Captive portal push error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.get('/:id', async (req, res) => {
+// ═══════════════════════════════════════
+// RESELLER CRUD
+// ═══════════════════════════════════════
+router.get("/:id", async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM resellers WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const result = await db.query("SELECT * FROM resellers WHERE id = $1", [
+      req.params.id,
+    ]);
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "Not found" });
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/', resellerValidation, async (req, res) => {
+router.post("/", resellerValidation, async (req, res) => {
   try {
-    const { name, company, email, phone, commission_rate, credit_limit, status } = req.body;
+    const {
+      name,
+      company,
+      email,
+      phone,
+      commission_rate,
+      credit_limit,
+      status,
+    } = req.body;
     const id = uuidv4();
     const result = await db.query(
       `INSERT INTO resellers (id, name, company, email, phone, commission_rate, credit_limit, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [id, name, company, email, phone, commission_rate || 10, credit_limit || 0, status || 'active']
+      [
+        id,
+        name,
+        company,
+        email,
+        phone,
+        commission_rate || 10,
+        credit_limit || 0,
+        status || "active",
+      ],
     );
-    logger.info('Reseller created', { id, name, email });
+    logger.info("Reseller created", { id, name, email });
     res.status(201).json(result.rows[0]);
-  } catch (e) { 
-    logger.error('Failed to create reseller', { error: e.message });
-    res.status(500).json({ error: e.message }); 
+  } catch (e) {
+    logger.error("Failed to create reseller", { error: e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
-router.put('/:id', [...resellerValidation.slice(0, -1)], async (req, res) => {
+router.put("/:id", [...resellerValidation.slice(0, -1)], async (req, res) => {
   try {
-    const { name, company, email, phone, commission_rate, credit_limit, status } = req.body;
+    const {
+      name,
+      company,
+      email,
+      phone,
+      commission_rate,
+      credit_limit,
+      status,
+    } = req.body;
     const result = await db.query(
       `UPDATE resellers SET name = COALESCE($1, name), company = COALESCE($2, company),
        email = COALESCE($3, email), phone = COALESCE($4, phone), commission_rate = COALESCE($5, commission_rate),
        credit_limit = COALESCE($6, credit_limit), status = COALESCE($7, status)
        WHERE id = $8 RETURNING *`,
-      [name, company, email, phone, commission_rate, credit_limit, status, req.params.id]
+      [
+        name,
+        company,
+        email,
+        phone,
+        commission_rate,
+        credit_limit,
+        status,
+        req.params.id,
+      ],
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    logger.info('Reseller updated', { id: req.params.id });
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "Not found" });
+    logger.info("Reseller updated", { id: req.params.id });
     res.json(result.rows[0]);
-  } catch (e) { 
-    logger.error('Failed to update reseller', { error: e.message });
-    res.status(500).json({ error: e.message }); 
+  } catch (e) {
+    logger.error("Failed to update reseller", { error: e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
-    await db.query('DELETE FROM resellers WHERE id = $1', [req.params.id]);
+    await db.query("DELETE FROM resellers WHERE id = $1", [req.params.id]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
