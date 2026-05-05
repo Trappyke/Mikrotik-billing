@@ -515,7 +515,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         </button>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition-all"
         >
           <LogOut className="w-4 h-4" />
           <span>Sign Out</span>
