@@ -251,13 +251,12 @@ const billingItems = [
     label: "Resellers",
     feature: "resellers",
   },
-  {
-  { to: "/credit-notes", icon: FileText2, label: "Credit Notes", feature: "invoices" },
-    to: "/billing-backup",
-    icon: Database,
-    label: "Backups",
-    feature: "backups",
-  },
+    { to: "/credit-notes", icon: FileText2, label: "Credit Notes", feature: "invoices" },
+    { to: "/billing-backup",
+      icon: Database,
+      label: "Backups",
+      feature: "backups",
+    },
   { to: "/inventory", icon: Package, label: "Inventory", feature: "inventory" },
 ];
 
