@@ -1,7 +1,7 @@
 FROM node:18-alpine
 
 # Force complete cache invalidation - change this number to force rebuild
-ARG CACHEBUST=2
+ARG CACHEBUST=5
 ARG VITE_GOOGLE_CLIENT_ID
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 
