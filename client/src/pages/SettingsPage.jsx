@@ -688,6 +688,7 @@ export function SettingsPage() {
           "payment-gateways",
           "bank-paybills",
           "wireguard",
+          "security",
           "billing",
           "network",
           "notifications",
