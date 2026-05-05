@@ -2,16 +2,85 @@ const express = require("express");
 const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
 
+const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+
 function getDb() {
   return global.db || require("../db/memory");
 }
+
+// GET /api/public/tenant-branding - Public tenant branding for login page
+router.get("/tenant-branding", async (req, res) => {
+  try {
+    const db = getDb();
+    let tenant = null;
+
+    // 1. Try by slug query param
+    if (req.query.slug) {
+      const result = await db.query(
+        "SELECT * FROM tenants WHERE slug = $1 AND is_active = true",
+        [req.query.slug],
+      );
+      tenant = result.rows[0];
+    }
+
+    // 2. Try by domain (from host header)
+    if (!tenant && req.headers.host) {
+      const hostname = req.headers.host.split(":")[0];
+      const result = await db.query(
+        "SELECT * FROM tenants WHERE domain = $1 AND is_active = true",
+        [hostname],
+      );
+      tenant = result.rows[0];
+    }
+
+    // 3. Fall back to default tenant
+    if (!tenant) {
+      const result = await db.query(
+        "SELECT * FROM tenants WHERE id = $1 AND is_active = true",
+        [DEFAULT_TENANT_ID],
+      );
+      tenant = result.rows[0];
+    }
+
+    // 4. Hardcoded fallback
+    if (!tenant) {
+      return res.json({
+        company_name: "MikroTik Billing",
+        logo_url: null,
+        primary_color: "#3b82f6",
+        secondary_color: "#1e293b",
+        accent_color: "#f59e0b",
+        is_default: true,
+      });
+    }
+
+    res.json({
+      id: tenant.id,
+      slug: tenant.slug,
+      company_name: tenant.company_name || tenant.name,
+      logo_url: tenant.logo_url || null,
+      primary_color: tenant.primary_color || "#3b82f6",
+      secondary_color: tenant.secondary_color || "#1e293b",
+      accent_color: tenant.accent_color || "#f59e0b",
+      is_default: tenant.id === DEFAULT_TENANT_ID,
+    });
+  } catch (e) {
+    res.json({
+      company_name: "MikroTik Billing",
+      logo_url: null,
+      primary_color: "#3b82f6",
+      secondary_color: "#1e293b",
+      accent_color: "#f59e0b",
+      is_default: true,
+    });
+  }
+});
 
 // GET /api/public/plans - List active plans for self-registration
 router.get("/plans", async (req, res) => {
   try {
     const billing = require("../services/billingData");
     const allPlans = await billing.listPlans();
-    // Only return active plans, hide internal fields
     const plans = allPlans
       .filter((p) => p.status !== "archived")
       .map((p) => ({
@@ -50,7 +119,6 @@ router.post("/register", async (req, res) => {
     const bcrypt = require("bcryptjs");
     const pinHash = await bcrypt.hash(pin, 10);
 
-    // Create customer
     const customer = await billing.createCustomer({
       name,
       phone,
@@ -60,7 +128,6 @@ router.post("/register", async (req, res) => {
       created_at: new Date().toISOString(),
     });
 
-    // Create subscription
     const sub = await billing.createSubscription({
       customer_id: customer.id,
       plan_id: plan.id,
@@ -72,7 +139,6 @@ router.post("/register", async (req, res) => {
     const planPrice = Number(plan.price) || 0;
     const planTax = Math.round(planPrice * 0.16 * 100) / 100;
 
-    // Create first invoice
     const invoice = await billing.createInvoice({
       customer_id: customer.id,
       subscription_id: sub.id,
@@ -85,7 +151,6 @@ router.post("/register", async (req, res) => {
       created_at: new Date().toISOString(),
     });
 
-    // Store the PIN hash on the customer record for portal login
     const bcrypt2 = require("bcryptjs");
     const pinHashStored = await bcrypt2.hash(pin, 10);
     if (!global.dbAvailable) {
@@ -130,7 +195,6 @@ router.post("/confirm-payment", async (req, res) => {
 
     const billing = require("../services/billingData");
 
-    // Mark invoice as paid
     const invoice = await billing.updateInvoice(invoice_id, {
       status: "paid",
       paid_at: new Date().toISOString(),
@@ -140,7 +204,6 @@ router.post("/confirm-payment", async (req, res) => {
 
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
-    // Get subscription and activate it
     const sub = invoice.subscription_id
       ? await billing.getSubscriptionById(invoice.subscription_id)
       : null;
@@ -151,13 +214,11 @@ router.post("/confirm-payment", async (req, res) => {
       });
     }
 
-    // Get customer and plan for response
     const customer = sub
       ? await billing.getCustomerById(sub.customer_id)
       : null;
     const plan = sub ? await billing.getPlanById(sub.plan_id) : null;
 
-    // Generate credentials (PPPoE username/password or hotspot voucher)
     const pppoeUsername = customer ? `isp-${customer.phone}` : null;
     const pppoePassword = Math.random().toString(36).substring(2, 10);
 

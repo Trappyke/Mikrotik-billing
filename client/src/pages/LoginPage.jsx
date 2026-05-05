@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Shield, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -7,16 +7,59 @@ import { setAuth } from "../lib/auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+const DEFAULT_BRANDING = {
+  company_name: "MikroTik Billing",
+  logo_url: null,
+  primary_color: "#3b82f6",
+  secondary_color: "#1e293b",
+  accent_color: "#f59e0b",
+  is_default: true,
+};
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [step, setStep] = useState("password"); // 'password' | '2fa'
+  const [step, setStep] = useState("password");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [tempToken, setTempToken] = useState("");
   const [loading, setLoading] = useState(false);
+  const [branding, setBranding] = useState(DEFAULT_BRANDING);
   const navigate = useNavigate();
   const toast = useToast();
+
+  // Fetch tenant branding on mount
+  useEffect(() => {
+    const fetchBranding = async () => {
+      try {
+        const slug = new URLSearchParams(window.location.search).get("tenant");
+        const url = slug
+          ? `${API_URL}/public/tenant-branding?slug=${slug}`
+          : `${API_URL}/public/tenant-branding`;
+        const { data } = await axios.get(url);
+        setBranding(data);
+        // Apply CSS variables for tenant colors
+        document.documentElement.style.setProperty(
+          "--tenant-primary",
+          data.primary_color || DEFAULT_BRANDING.primary_color,
+        );
+        document.documentElement.style.setProperty(
+          "--tenant-secondary",
+          data.secondary_color || DEFAULT_BRANDING.secondary_color,
+        );
+        document.documentElement.style.setProperty(
+          "--tenant-accent",
+          data.accent_color || DEFAULT_BRANDING.accent_color,
+        );
+      } catch {
+        setBranding(DEFAULT_BRANDING);
+      }
+    };
+    fetchBranding();
+  }, []);
+
+  const primary = branding.primary_color || "#3b82f6";
+  const secondary = branding.secondary_color || "#1e293b";
 
   const handleGoogleLogin = async () => {
     const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -46,7 +89,6 @@ export default function LoginPage() {
       window.google.accounts.id.prompt();
     };
 
-    // Load Google Identity Services
     if (!window.google?.accounts?.id) {
       const script = document.createElement("script");
       script.src = "https://accounts.google.com/gsi/client";
@@ -67,16 +109,6 @@ export default function LoginPage() {
         password,
       });
 
-      console.log("🔐 Login response received");
-      console.log(
-        "  Token:",
-        response.data.token
-          ? `YES (${response.data.token.substring(0, 25)}...)`
-          : "NO!",
-      );
-      console.log("  User:", response.data.user);
-
-      // Check if 2FA is required
       if (response.data.requires_2fa) {
         setTempToken(response.data.temp_token);
         setStep("2fa");
@@ -84,46 +116,17 @@ export default function LoginPage() {
         return;
       }
 
-      // Save token using centralized auth manager
       const saved = setAuth(response.data.token, response.data.user);
-
       if (!saved) {
-        console.error("❌ CRITICAL: Failed to save token!");
         toast.error("Login failed - could not save token");
         return;
       }
 
-      // Verify token is actually in localStorage
-      const verifyToken = localStorage.getItem("auth_token");
-      console.log(
-        "🔍 Verification - Token in storage:",
-        verifyToken ? "YES" : "NO",
-      );
-
-      if (!verifyToken) {
-        console.error(
-          "❌ VERIFICATION FAILED: Token not in localStorage after setAuth!",
-        );
-        toast.error("Login failed - storage error");
-        return;
-      }
-
       toast.success("Login successful!");
-
-      // Navigate to dashboard
-      setTimeout(() => {
-        console.log("🚀 Navigating to /");
-        navigate("/");
-      }, 200);
+      setTimeout(() => navigate("/"), 200);
     } catch (error) {
-      console.error("Login error:", error);
-      console.error("Response data:", error.response?.data);
-      console.error("Response status:", error.response?.status);
-      console.error("Request URL:", error.config?.url);
-
       const errorMsg =
         error.response?.data?.error || error.message || "Unknown error";
-
       toast.error("Login failed", errorMsg);
     } finally {
       setLoading(false);
@@ -137,38 +140,19 @@ export default function LoginPage() {
     try {
       const response = await axios.post(
         `${API_URL}/auth/login`,
-        {
-          email,
-          password,
-          two_factor_code: twoFactorCode,
-        },
+        { email, password, two_factor_code: twoFactorCode },
         { headers: { Authorization: `Bearer ${tempToken}` } },
       );
 
       const saved = setAuth(response.data.token, response.data.user);
-
       if (!saved) {
-        console.error("❌ CRITICAL: Failed to save token!");
         toast.error("Login failed - could not save token");
         return;
       }
 
-      const verifyToken = localStorage.getItem("auth_token");
-      if (!verifyToken) {
-        console.error(
-          "❌ VERIFICATION FAILED: Token not in localStorage after setAuth!",
-        );
-        toast.error("Login failed - storage error");
-        return;
-      }
-
       toast.success("Login successful!");
-
-      setTimeout(() => {
-        navigate("/");
-      }, 200);
+      setTimeout(() => navigate("/"), 200);
     } catch (error) {
-      console.error("2FA error:", error);
       toast.error("Invalid code");
       setLoading(false);
     }
@@ -178,27 +162,54 @@ export default function LoginPage() {
     <div
       className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden"
       style={{
-        background:
-          "radial-gradient(ellipse at top, #1a1a2e 0%, #0f1117 50%, #0a0a0f 100%)",
+        background: `radial-gradient(ellipse at top, ${secondary} 0%, #0f1117 50%, #0a0a0f 100%)`,
       }}
     >
-      {/* Animated background blobs */}
+      {/* Animated background blobs with tenant color */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-violet-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-3xl" />
+        <div
+          className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl"
+          style={{ backgroundColor: `${primary}15` }}
+        />
+        <div
+          className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl"
+          style={{ backgroundColor: `${primary}10` }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-3xl"
+          style={{ backgroundColor: `${primary}08` }}
+        />
       </div>
 
       <div className="w-full max-w-md relative z-10">
+        {/* Branded header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 mb-5 shadow-2xl shadow-blue-500/20 ring-4 ring-blue-500/10">
-            <Shield className="w-10 h-10 text-white" />
-          </div>
+          {branding.logo_url ? (
+            <img
+              src={branding.logo_url}
+              alt={branding.company_name}
+              className="h-16 mx-auto mb-5 object-contain"
+            />
+          ) : (
+            <div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5 shadow-2xl ring-4 ring-white/5"
+              style={{
+                background: `linear-gradient(135deg, ${primary}, ${branding.accent_color || primary})`,
+                boxShadow: `0 0 40px ${primary}30`,
+              }}
+            >
+              <Shield className="w-10 h-10 text-white" />
+            </div>
+          )}
           <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">
-            <span className="bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent">
-              MikroTik
-            </span>{" "}
-            Billing
+            <span
+              className="bg-clip-text text-transparent"
+              style={{
+                backgroundImage: `linear-gradient(135deg, ${primary}, ${branding.accent_color || primary})`,
+              }}
+            >
+              {branding.company_name}
+            </span>
           </h1>
           <p className="text-zinc-400 text-sm">
             Sign in to manage your ISP network
@@ -254,7 +265,8 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 transition-all"
+                    style={{ focusRingColor: primary }}
                     placeholder="you@example.com"
                     required
                     autoFocus
@@ -269,7 +281,7 @@ export default function LoginPage() {
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all pr-12"
+                      className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 transition-all pr-12"
                       placeholder="••••••••"
                       required
                     />
@@ -289,7 +301,11 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 flex items-center justify-center gap-2"
+                  className="w-full text-white font-semibold py-3.5 px-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    background: `linear-gradient(135deg, ${primary}, ${branding.accent_color || primary})`,
+                    boxShadow: `0 8px 24px ${primary}40`,
+                  }}
                 >
                   {loading ? (
                     <>
@@ -307,8 +323,11 @@ export default function LoginPage() {
           {step === "2fa" && (
             <div className="space-y-5">
               <div className="text-center">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-500/10 mb-3">
-                  <Shield className="w-7 h-7 text-blue-400" />
+                <div
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-3"
+                  style={{ backgroundColor: `${primary}20` }}
+                >
+                  <Shield className="w-7 h-7" style={{ color: primary }} />
                 </div>
                 <h3 className="text-white font-semibold text-lg">
                   Two-Factor Authentication
@@ -326,14 +345,19 @@ export default function LoginPage() {
                   onChange={(e) =>
                     setTwoFactorCode(e.target.value.replace(/\D/g, ""))
                   }
-                  className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-4 text-white text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-4 text-white text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2"
+                  style={{ focusRingColor: primary }}
                   placeholder="000000"
                   autoFocus
                 />
                 <button
                   type="submit"
                   disabled={twoFactorCode.length !== 6 || loading}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 shadow-lg shadow-blue-500/25"
+                  className="w-full text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 shadow-lg"
+                  style={{
+                    background: `linear-gradient(135deg, ${primary}, ${branding.accent_color || primary})`,
+                    boxShadow: `0 8px 24px ${primary}40`,
+                  }}
                 >
                   {loading ? "Verifying..." : "Verify"}
                 </button>
@@ -350,7 +374,9 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-zinc-600 text-xs mt-8">
-          Secure ISP Management Platform
+          {branding.is_default
+            ? "Secure ISP Management Platform"
+            : `\u00a9 ${branding.company_name}`}
         </p>
       </div>
     </div>
