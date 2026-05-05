@@ -509,10 +509,10 @@ export function CustomerPortal() {
             </button>
             <button
               onClick={() => setShowPayModal(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition-colors"
             >
               <Smartphone className="w-4 h-4" />
-              <span className="hidden sm:inline">Pay Now</span>
+              <span>Pay Now</span>
             </button>
             <button
               onClick={handleLogout}
@@ -615,6 +615,27 @@ export function CustomerPortal() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Outstanding Balance - Pay Now Card */}
+            {data.outstanding_balance > 0 && (
+              <div className="bg-gradient-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                    <Smartphone className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-emerald-300 font-semibold text-lg">Outstanding Balance</p>
+                    <p className="text-3xl font-bold text-white">KES {data.outstanding_balance.toFixed(2)}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPayModal(true)}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 w-full sm:w-auto"
+                >
+                  <Smartphone className="w-5 h-5 inline mr-2" />
+                  Pay with M-Pesa
+                </button>
+              </div>
+            )}
               <StatCard
                 title="Current Plan"
                 value={data.subscription?.plan_name || "No plan"}
