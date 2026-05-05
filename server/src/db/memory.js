@@ -1813,6 +1813,8 @@ module.exports.query = async function (text, params) {
         password_hash: params[2],
         name: params[3],
         role: params[4],
+        two_factor_secret: null,
+        two_factor_enabled: false,
         created_at: new Date().toISOString(),
       };
       store.users.push(user);
@@ -1825,7 +1827,26 @@ module.exports.query = async function (text, params) {
     if (lower.includes("update users")) {
       const user = store.users.find((u) => u.id === params[params.length - 1]);
       if (user) {
-        user.last_login_at = new Date().toISOString();
+        if (lower.includes("last_login_at")) {
+          user.last_login_at = new Date().toISOString();
+        }
+        if (lower.includes("is_online")) {
+          user.is_online = lower.includes("is_online = true");
+        }
+        if (lower.includes("last_seen")) {
+          user.last_seen = params[0];
+          user.is_online = true;
+        }
+        if (lower.includes("two_factor_secret")) {
+          if (lower.includes("two_factor_secret = null")) {
+            user.two_factor_secret = null;
+          } else {
+            user.two_factor_secret = params[0];
+          }
+        }
+        if (lower.includes("two_factor_enabled")) {
+          user.two_factor_enabled = lower.includes("two_factor_enabled = true");
+        }
         return { rows: [] };
       }
     }
