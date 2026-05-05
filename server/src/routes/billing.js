@@ -7,6 +7,7 @@ const db = global.dbAvailable ? global.db : require("../db/memory");
 const MpesaService = require("../services/mpesa");
 const alertSystem = require("../services/alertSystem");
 const mikrotikProvisioning = require("../services/mikrotikProvisioning");
+const slack = require("../services/slackNotifier");
 
 async function getExpandedSubscription(subscriptionId) {
   const sub = await billing.getSubscriptionById(subscriptionId);
@@ -264,6 +265,13 @@ router.post("/customers", async (req, res) => {
     }
 
     const portalUrl = `${req.protocol}://${req.get("host")}/portal/login?phone=${encodeURIComponent(customer.phone || "")}`;
+
+    // Slack notification
+    const planName = subscription?.plan_name || req.body.plan_id || null;
+    slack
+      .customerCreated(customer.name, planName, customer.phone)
+      .catch(() => {});
+
     res.status(201).json({
       ...customer,
       subscription: subscription || null,
@@ -1202,6 +1210,14 @@ router.post("/payments", async (req, res) => {
       amount: payment.amount,
       invoice_id: payment.invoice_id,
     }).catch(() => {});
+
+    // Slack notification
+    const customerName = customer?.name || "Unknown";
+    const invoiceNumber =
+      invoice?.invoice_number || payment.invoice_id || "N/A";
+    slack
+      .paymentReceived(customerName, payment.amount, invoiceNumber)
+      .catch(() => {});
 
     res.status(201).json(payment);
   } catch (e) {

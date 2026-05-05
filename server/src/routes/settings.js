@@ -5,6 +5,7 @@
 
 const express = require("express");
 const router = express.Router();
+const slack = require("../services/slackNotifier");
 
 // Get database connection
 function getDb() {
@@ -70,6 +71,7 @@ async function getAllSettings() {
       primary_color: "#3b82f6",
       secondary_color: "#1e293b",
       branding_title: "",
+      slack_webhook_url: "",
     };
   }
 
@@ -92,6 +94,7 @@ async function getAllSettings() {
     primary_color: "#3b82f6",
     secondary_color: "#1e293b",
     branding_title: "",
+    slack_webhook_url: "",
   };
 
   try {
@@ -127,6 +130,7 @@ const settingsStore = {
   primary_color: "#3b82f6",
   secondary_color: "#1e293b",
   branding_title: "",
+  slack_webhook_url: "",
 };
 
 // WireGuard settings store
@@ -332,6 +336,11 @@ router.get("/", async (req, res) => {
 // Update settings
 router.put("/", async (req, res) => {
   const settings = req.body;
+
+  // Configure Slack webhook URL if provided
+  if (settings.slack_webhook_url !== undefined) {
+    slack.configure(settings.slack_webhook_url);
+  }
 
   if (!getDb()) {
     // Fallback to in-memory if database not available

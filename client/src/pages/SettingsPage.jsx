@@ -226,6 +226,7 @@ export function SettingsPage() {
     primary_color: "#3b82f6",
     secondary_color: "#1e293b",
     branding_title: "",
+    slack_webhook_url: "",
   });
 
   const [logoPreview, setLogoPreview] = useState(null);
@@ -1044,6 +1045,39 @@ export function SettingsPage() {
                     <RotateCcw className="w-3 h-3 mr-1" /> Reset to Defaults
                   </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Slack Notifications */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Webhook className="w-5 h-5" /> Slack Notifications
+              </CardTitle>
+              <CardDescription>
+                Send real-time notifications to a Slack channel for key billing
+                events.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div>
+                <Label htmlFor="slack-webhook">Slack Webhook URL</Label>
+                <Input
+                  id="slack-webhook"
+                  value={settings.slack_webhook_url || ""}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      slack_webhook_url: e.target.value,
+                    })
+                  }
+                  placeholder="https://hooks.slack.com/services/..."
+                />
+                <p className="text-xs text-zinc-500 mt-1">
+                  Send notifications to a Slack channel. Create a webhook at
+                  Slack App Directory.
+                </p>
               </div>
             </CardContent>
           </Card>

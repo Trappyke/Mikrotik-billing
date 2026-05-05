@@ -23,18 +23,18 @@ const upload = multer({
 // PREPAID WALLET
 // ═══════════════════════════════════════
 
-router.get("/wallet/all", (req, res) => {
-  walletStore.autoSetRatesFromPlans();
-  res.json(walletStore.getAllWallets());
+router.get("/wallet/all", async (req, res) => {
+  await walletStore.autoSetRatesFromPlans();
+  res.json(await walletStore.getAllWallets());
 });
 
-router.get("/wallet/:customerId", (req, res) => {
-  const wallet = walletStore.getWallet(req.params.customerId);
-  const transactions = walletStore.getTransactions(req.params.customerId);
+router.get("/wallet/:customerId", async (req, res) => {
+  const wallet = await walletStore.getWallet(req.params.customerId);
+  const transactions = await walletStore.getTransactions(req.params.customerId);
 
   if (!wallet) {
     // Create wallet if doesn't exist
-    const newWallet = walletStore.topUp(req.params.customerId, 0);
+    const newWallet = await walletStore.topUp(req.params.customerId, 0);
     return res.json({ wallet: newWallet.wallet, transactions: [] });
   }
 
@@ -68,12 +68,12 @@ router.post("/wallet/:customerId/topup", async (req, res) => {
   res.json(result);
 });
 
-router.post("/wallet/:customerId/set-rate", (req, res) => {
+router.post("/wallet/:customerId/set-rate", async (req, res) => {
   const { daily_rate } = req.body;
   if (!daily_rate || parseFloat(daily_rate) <= 0)
     return res.status(400).json({ error: "Invalid rate" });
 
-  const wallet = walletStore.setDailyRate(
+  const wallet = await walletStore.setDailyRate(
     req.params.customerId,
     parseFloat(daily_rate),
   );
@@ -83,7 +83,7 @@ router.post("/wallet/:customerId/set-rate", (req, res) => {
 });
 
 router.post("/wallet/daily-run", async (req, res) => {
-  const results = walletStore.runDailyDeductions();
+  const results = await walletStore.runDailyDeductions();
   res.json(results);
 });
 
@@ -117,7 +117,8 @@ router.get("/map/data", async (req, res) => {
       }));
     } else {
       const multiStore = require("../db/multiFeatureStore");
-      branches = multiStore.branches.map((b) => ({
+      const rawBranches = await multiStore.getBranches();
+      branches = rawBranches.map((b) => ({
         id: b.id,
         name: b.name,
         type: "branch",
@@ -125,9 +126,9 @@ router.get("/map/data", async (req, res) => {
         lng: b.lng || null,
         city: b.city,
         status: b.status,
-        active_pppoe: Math.floor(Math.random() * 50) + 10,
-        online_routers: Math.floor(Math.random() * 3) + 1,
-        total_routers: 3,
+        active_pppoe: b.active_pppoe || Math.floor(Math.random() * 50) + 10,
+        online_routers: b.online_routers || Math.floor(Math.random() * 3) + 1,
+        total_routers: b.total_routers || 3,
       }));
     }
 
@@ -162,34 +163,36 @@ router.get("/map/data", async (req, res) => {
         branch_id: c.branch_id,
       }));
     } else {
-      customers = billing.store.customers.map((c) => {
-        const sub = billing.store.subscriptions.find(
-          (s) => s.customer_id === c.id && s.status === "active",
-        );
-        const wallet = walletStore.getWallet(c.id);
-        const isSuspended =
-          sub?.status === "suspended" || wallet?.status === "suspended";
-        const isThrottled = sub?.throttled;
+      customers = await Promise.all(
+        billing.store.customers.map(async (c) => {
+          const sub = billing.store.subscriptions.find(
+            (s) => s.customer_id === c.id && s.status === "active",
+          );
+          const wallet = await walletStore.getWallet(c.id);
+          const isSuspended =
+            sub?.status === "suspended" || wallet?.status === "suspended";
+          const isThrottled = sub?.throttled;
 
-        return {
-          id: c.id,
-          name: c.name,
-          type: "customer",
-          lat: c.lat || null,
-          lng: c.lng || null,
-          status: isSuspended
-            ? "suspended"
-            : isThrottled
-              ? "throttled"
-              : "active",
-          phone: c.phone,
-          plan: sub?.plan
-            ? billing.store.service_plans.find((p) => p.id === sub.plan_id)
-                ?.name
-            : null,
-          branch_id: c.branch_id,
-        };
-      });
+          return {
+            id: c.id,
+            name: c.name,
+            type: "customer",
+            lat: c.lat || null,
+            lng: c.lng || null,
+            status: isSuspended
+              ? "suspended"
+              : isThrottled
+                ? "throttled"
+                : "active",
+            phone: c.phone,
+            plan: sub?.plan
+              ? billing.store.service_plans.find((p) => p.id === sub.plan_id)
+                  ?.name
+              : null,
+            branch_id: c.branch_id,
+          };
+        }),
+      );
     }
 
     // Calculate center point from all locations
@@ -231,29 +234,29 @@ router.put("/map/customer/:id", (req, res) => {
 // AUTO BACKUP
 // ═══════════════════════════════════════
 
-router.get("/backup/schedules", (req, res) => {
-  res.json(backupStore.getAllSchedules());
+router.get("/backup/schedules", async (req, res) => {
+  res.json(await backupStore.getAllSchedules());
 });
 
-router.get("/backup/schedules/:id", (req, res) => {
-  const schedule = backupStore.getSchedule(req.params.id);
+router.get("/backup/schedules/:id", async (req, res) => {
+  const schedule = await backupStore.getSchedule(req.params.id);
   if (!schedule) return res.status(404).json({ error: "Schedule not found" });
   res.json(schedule);
 });
 
-router.post("/backup/schedules", (req, res) => {
-  const schedule = backupStore.createSchedule(req.body);
+router.post("/backup/schedules", async (req, res) => {
+  const schedule = await backupStore.createSchedule(req.body);
   res.status(201).json(schedule);
 });
 
-router.put("/backup/schedules/:id", (req, res) => {
-  const schedule = backupStore.updateSchedule(req.params.id, req.body);
+router.put("/backup/schedules/:id", async (req, res) => {
+  const schedule = await backupStore.updateSchedule(req.params.id, req.body);
   if (!schedule) return res.status(404).json({ error: "Schedule not found" });
   res.json(schedule);
 });
 
-router.delete("/backup/schedules/:id", (req, res) => {
-  const schedule = backupStore.deleteSchedule(req.params.id);
+router.delete("/backup/schedules/:id", async (req, res) => {
+  const schedule = await backupStore.deleteSchedule(req.params.id);
   if (!schedule) return res.status(404).json({ error: "Schedule not found" });
   res.json({ message: "Schedule deleted" });
 });
@@ -268,21 +271,21 @@ router.post("/backup/run-all", async (req, res) => {
   res.json(results);
 });
 
-router.get("/backup/backups", (req, res) => {
-  const backups = backupStore.getBackups(
+router.get("/backup/backups", async (req, res) => {
+  const backups = await backupStore.getBackups(
     req.query.schedule_id,
     parseInt(req.query.limit) || 50,
   );
   res.json(backups);
 });
 
-router.get("/backup/backups/:id", (req, res) => {
-  const content = backupStore.getBackupContent(req.params.id);
+router.get("/backup/backups/:id", async (req, res) => {
+  const content = await backupStore.getBackupContent(req.params.id);
   if (!content) return res.status(404).json({ error: "Backup not found" });
   res.json(content);
 });
 
-router.post("/backup/upload", upload.single("file"), (req, res) => {
+router.post("/backup/upload", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
@@ -293,7 +296,7 @@ router.post("/backup/upload", upload.single("file"), (req, res) => {
   const content = file.buffer.toString("utf-8");
 
   // Create backup entry
-  const backup = backupStore.createUploadedBackup({
+  const backup = await backupStore.createUploadedBackup({
     device_name: file.originalname.replace(/\.(rsc|backup)$/, ""),
     ip_address: "uploaded",
     config_content: content,
@@ -311,7 +314,7 @@ router.post("/backup/restore/:id", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const backup = backupStore.getBackupContent(req.params.id);
+  const backup = await backupStore.getBackupContent(req.params.id);
   if (!backup) return res.status(404).json({ error: "Backup not found" });
 
   // TODO: Implement actual MikroTik API restore

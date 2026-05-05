@@ -667,7 +667,7 @@ const startServer = async () => {
         });
       }
 
-      serverInstance = app.listen(PORT, () => {
+      serverInstance = app.listen(PORT, async () => {
         logger.info("Server started", {
           port: PORT,
           environment: process.env.NODE_ENV || "development",
@@ -691,6 +691,26 @@ const startServer = async () => {
           });
         } catch (error) {
           logger.warn("Could not initialize alert system", {
+            error: error.message,
+          });
+        }
+
+        // Initialize Slack notifier with stored webhook URL
+        try {
+          if (dbAvailable) {
+            const result = await db.query(
+              "SELECT value FROM settings WHERE key = $1",
+              ["slack_webhook_url"],
+            );
+            const slackUrl = result.rows[0]?.value || "";
+            if (slackUrl) {
+              const slack = require("./services/slackNotifier");
+              slack.configure(slackUrl);
+              logger.info("Slack notifier configured from stored settings");
+            }
+          }
+        } catch (error) {
+          logger.warn("Could not configure Slack notifier from settings", {
             error: error.message,
           });
         }

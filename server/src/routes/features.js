@@ -7,6 +7,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
 const multiStore = require("../db/multiFeatureStore");
 const billing = require("../db/billingStore");
+const slack = require("../services/slackNotifier");
 
 // ═══════════════════════════════════════
 // BRANCHES
@@ -462,6 +463,11 @@ router.post("/auto-suspend/run", async (req, res) => {
           subscription_id: sub.id,
           days_overdue: daysOverdue,
         }).catch(() => {});
+
+        // Slack notification
+        slack
+          .customerSuspended(sub.customer?.name || "Unknown", daysOverdue)
+          .catch(() => {});
       } else if (daysOverdue >= throttle_days && !sub.throttled) {
         sub.throttled = true;
         sub.throttle_speed = `${multiStore.graceConfig.throttle_speed_up}/${multiStore.graceConfig.throttle_speed_down}`;

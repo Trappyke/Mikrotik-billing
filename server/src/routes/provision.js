@@ -6,6 +6,7 @@ const provisionStore = require("../db/provisionStore");
 const memoryDb = require("../db/memory");
 const zeroTouchBilling = require("../services/zeroTouchBilling");
 const enrollmentMemoryStore = require("../services/enrollmentMemoryStore");
+const slack = require("../services/slackNotifier");
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -231,6 +232,11 @@ router.get("/provision/callback/:token", async (req, res) => {
       ip_address: routerData.ip_address || ip,
       wg_pubkey: wgPubKey || null,
     }).catch(() => {});
+
+    // Slack notification
+    slack
+      .routerProvisioned(routerData.name, "auto-detect", "auto-detect")
+      .catch(() => {});
 
     // Log callback
     await getDb().query(
