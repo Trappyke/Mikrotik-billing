@@ -39,6 +39,7 @@ import {
   Layers,
 } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
+import { getToken } from "../../lib/auth";
 import {
   generateInvoicePDF,
   generateReceiptPDF,
@@ -125,6 +126,11 @@ export function CustomerPortal() {
   const [availablePlans, setAvailablePlans] = useState([]);
   const [changingPlan, setChangingPlan] = useState(false);
   const [confirmPlan, setConfirmPlan] = useState(null);
+  const [billingInvoices, setBillingInvoices] = useState([]);
+  const [billingPayments, setBillingPayments] = useState([]);
+  const [usageHistory, setUsageHistory] = useState([]);
+  const [usageViewMode, setUsageViewMode] = useState("daily");
+  const [subscriptions, setSubscriptions] = useState([]);
 
   useEffect(() => {
     // Check auth - redirect to login if not authenticated
@@ -140,6 +146,10 @@ export function CustomerPortal() {
     fetchCustomerReview();
     fetchPasswordInfo();
     fetchAvailablePlans();
+    fetchBillingInvoices();
+    fetchBillingPayments();
+    fetchUsageHistory();
+    fetchSubscriptions();
   }, [customerId]);
 
   // Handle browser back/forward cache (bfcache) - page may restore from cache
@@ -206,6 +216,50 @@ export function CustomerPortal() {
       setAvailablePlans(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Failed to fetch available plans:", e);
+    }
+  };
+
+  const fetchBillingInvoices = async () => {
+    try {
+      const { data } = await axios.get(
+        `${API}/billing/invoices?customer_id=${customerId}`,
+      );
+      setBillingInvoices(Array.isArray(data) ? data : data?.invoices || []);
+    } catch (e) {
+      console.error("Failed to fetch billing invoices:", e);
+    }
+  };
+
+  const fetchBillingPayments = async () => {
+    try {
+      const { data } = await axios.get(
+        `${API}/billing/payments?customer_id=${customerId}`,
+      );
+      setBillingPayments(Array.isArray(data) ? data : data?.payments || []);
+    } catch (e) {
+      console.error("Failed to fetch billing payments:", e);
+    }
+  };
+
+  const fetchUsageHistory = async () => {
+    try {
+      const { data } = await axios.get(
+        `${API}/billing/usage/history?customer_id=${customerId}`,
+      );
+      setUsageHistory(Array.isArray(data) ? data : data?.usage || []);
+    } catch (e) {
+      console.error("Failed to fetch usage history:", e);
+    }
+  };
+
+  const fetchSubscriptions = async () => {
+    try {
+      const { data } = await axios.get(
+        `${API}/billing/subscriptions?customer_id=${customerId}`,
+      );
+      setSubscriptions(Array.isArray(data) ? data : data?.subscriptions || []);
+    } catch (e) {
+      console.error("Failed to fetch subscriptions:", e);
     }
   };
 
@@ -615,27 +669,31 @@ export function CustomerPortal() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Outstanding Balance - Pay Now Card */}
-            {data.outstanding_balance > 0 && (
-              <div className="bg-gradient-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                    <Smartphone className="w-6 h-6 text-emerald-400" />
+              {/* Outstanding Balance - Pay Now Card */}
+              {data.outstanding_balance > 0 && (
+                <div className="bg-gradient-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                      <Smartphone className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-emerald-300 font-semibold text-lg">
+                        Outstanding Balance
+                      </p>
+                      <p className="text-3xl font-bold text-white">
+                        KES {data.outstanding_balance.toFixed(2)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-emerald-300 font-semibold text-lg">Outstanding Balance</p>
-                    <p className="text-3xl font-bold text-white">KES {data.outstanding_balance.toFixed(2)}</p>
-                  </div>
+                  <button
+                    onClick={() => setShowPayModal(true)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 w-full sm:w-auto"
+                  >
+                    <Smartphone className="w-5 h-5 inline mr-2" />
+                    Pay with M-Pesa
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowPayModal(true)}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 w-full sm:w-auto"
-                >
-                  <Smartphone className="w-5 h-5 inline mr-2" />
-                  Pay with M-Pesa
-                </button>
-              </div>
-            )}
+              )}
               <StatCard
                 title="Current Plan"
                 value={data.subscription?.plan_name || "No plan"}
@@ -663,6 +721,31 @@ export function CustomerPortal() {
                 icon={Zap}
                 color="orange"
                 sub={`${data.usage?.session_count || 0} total`}
+              />
+              <StatCard
+                title="Days Remaining"
+                value={(() => {
+                  const sub = subscriptions[0] || data.subscription;
+                  if (sub?.next_billing_date) {
+                    const now = new Date();
+                    const next = new Date(sub.next_billing_date);
+                    const diff = Math.ceil(
+                      (next - now) / (1000 * 60 * 60 * 24),
+                    );
+                    return diff > 0 ? diff : 0;
+                  }
+                  if (sub?.billing_cycle_days_remaining)
+                    return sub.billing_cycle_days_remaining;
+                  return "—";
+                })()}
+                icon={Calendar}
+                color="blue"
+                sub={(() => {
+                  const sub = subscriptions[0] || data.subscription;
+                  if (sub?.next_billing_date)
+                    return `Next: ${new Date(sub.next_billing_date).toLocaleDateString()}`;
+                  return "billing cycle";
+                })()}
               />
             </div>
 
@@ -775,68 +858,206 @@ export function CustomerPortal() {
         {/* Bandwidth Tab */}
         {activeTab === "usage" && (
           <div className="space-y-6">
-            <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
-              <h3 className="text-white font-semibold flex items-center gap-2 mb-6">
+            {/* Usage View Toggle */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-semibold flex items-center gap-2">
                 <Activity className="w-5 h-5" />
-                Bandwidth Usage (Last 30 Days)
+                Bandwidth Usage
               </h3>
-
-              {bandwidthHistory.length === 0 ? (
-                <div className="text-zinc-500 text-center py-8">
-                  No bandwidth data available
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {bandwidthHistory.slice(0, 14).map((day, i) => {
-                    const maxGB = Math.max(
-                      ...bandwidthHistory.map((d) => d.total_gb || 0),
-                      1,
-                    );
-                    const percent = ((day.total_gb || 0) / maxGB) * 100;
-                    return (
-                      <div key={i} className="flex items-center gap-4">
-                        <div className="w-20 text-sm text-zinc-400">
-                          {new Date(day.date).toLocaleDateString("en", {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </div>
-                        <div className="flex-1 bg-zinc-800 rounded-full h-6 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-end pr-2 transition-all"
-                            style={{ width: `${percent}%` }}
-                          >
-                            <span className="text-xs text-white font-semibold">
-                              {day.total_gb?.toFixed(1) || 0} GB
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="flex bg-zinc-800/50 rounded-lg p-1 gap-1">
+                {["daily", "weekly", "monthly"].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setUsageViewMode(mode)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${
+                      usageViewMode === mode
+                        ? "bg-blue-600 text-white"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Download vs Upload */}
+            {/* Quota Warning */}
+            {(() => {
+              const usage =
+                usageHistory.find((u) => u.period === usageViewMode) ||
+                usageHistory[0];
+              const quota = data.usage?.quota_gb || usage?.quota_gb || 0;
+              const used = data.usage?.total_gb || usage?.total_gb || 0;
+              const pct = quota > 0 ? (used / quota) * 100 : 0;
+              if (pct >= 75 && quota > 0) {
+                return (
+                  <div
+                    className={`flex items-center gap-3 p-4 rounded-xl border ${
+                      pct >= 100
+                        ? "bg-red-500/10 border-red-500/20"
+                        : pct >= 90
+                          ? "bg-amber-500/10 border-amber-500/20"
+                          : "bg-blue-500/10 border-blue-500/20"
+                    }`}
+                  >
+                    <AlertTriangle
+                      className={`w-5 h-5 ${
+                        pct >= 100
+                          ? "text-red-400"
+                          : pct >= 90
+                            ? "text-amber-400"
+                            : "text-blue-400"
+                      }`}
+                    />
+                    <span
+                      className={`text-sm ${
+                        pct >= 100
+                          ? "text-red-300"
+                          : pct >= 90
+                            ? "text-amber-300"
+                            : "text-blue-300"
+                      }`}
+                    >
+                      {pct >= 100
+                        ? "You have exceeded your monthly data quota. Speed may be reduced."
+                        : pct >= 90
+                          ? `Warning: You've used ${pct.toFixed(0)}% of your ${quota} GB quota. Only ${(quota - used).toFixed(1)} GB remaining.`
+                          : `You've used ${pct.toFixed(0)}% of your monthly ${quota} GB quota.`}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Bar Chart */}
+            <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
+              <h4 className="text-white font-semibold mb-6">
+                {usageViewMode === "daily"
+                  ? "Daily Usage (Last 30 Days)"
+                  : usageViewMode === "weekly"
+                    ? "Weekly Usage (Last 12 Weeks)"
+                    : "Monthly Usage (Last 12 Months)"}
+              </h4>
+
+              {(() => {
+                const sourceData =
+                  usageHistory.length > 0 ? usageHistory : bandwidthHistory;
+                const displayData =
+                  usageViewMode === "daily"
+                    ? sourceData.slice(0, 30)
+                    : usageViewMode === "weekly"
+                      ? sourceData
+                          .filter((d) => d.period === "weekly" || d.week)
+                          .slice(0, 12)
+                      : sourceData
+                          .filter((d) => d.period === "monthly" || d.month)
+                          .slice(0, 12);
+                const fallbackData = sourceData.slice(0, 14);
+                const chartData =
+                  displayData.length > 0 ? displayData : fallbackData;
+
+                if (chartData.length === 0) {
+                  return (
+                    <div className="text-zinc-500 text-center py-8">
+                      No bandwidth data available
+                    </div>
+                  );
+                }
+
+                const maxVal = Math.max(
+                  ...chartData.map((d) => d.download_gb || d.total_gb || 0),
+                  1,
+                );
+
+                return (
+                  <div className="space-y-3">
+                    {chartData.map((day, i) => {
+                      const dl = day.download_gb || 0;
+                      const ul = day.upload_gb || 0;
+                      const total = dl + ul || day.total_gb || 0;
+                      const dlPct = (dl / maxVal) * 100;
+                      const ulPct = (ul / maxVal) * 100;
+                      const label =
+                        day.label || day.date
+                          ? new Date(day.date).toLocaleDateString("en", {
+                              month: "short",
+                              day: "numeric",
+                            })
+                          : day.week || day.month || `Period ${i + 1}`;
+
+                      return (
+                        <div key={i} className="flex items-center gap-4">
+                          <div className="w-20 text-sm text-zinc-400 truncate">
+                            {label}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex h-6 rounded-full overflow-hidden bg-zinc-800">
+                              <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 flex items-center justify-end pr-2 transition-all"
+                                style={{ width: `${Math.min(100, dlPct)}%` }}
+                              >
+                                {dlPct > 15 && (
+                                  <span className="text-xs text-white font-semibold">
+                                    {dl.toFixed(1)} ↓
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 flex items-center justify-end pr-2 transition-all"
+                                style={{ width: `${Math.min(100, ulPct)}%` }}
+                              >
+                                {ulPct > 15 && (
+                                  <span className="text-xs text-white font-semibold">
+                                    {ul.toFixed(1)} ↑
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {dlPct <= 15 && ulPct <= 15 && (
+                              <span className="text-xs text-zinc-400 mt-1">
+                                ↓{dl.toFixed(1)} ↑{ul.toFixed(1)} GB
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Download vs Upload Summary */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-white font-semibold flex items-center gap-2">
                     <Download className="w-5 h-5 text-emerald-400" />
-                    Download
+                    Total Downloaded
                   </h4>
                   <span className="text-2xl font-bold text-emerald-400">
-                    {data.usage?.download_gb?.toFixed(1) || 0} GB
+                    {(() => {
+                      const src =
+                        usageHistory.length > 0
+                          ? usageHistory
+                          : bandwidthHistory;
+                      const total = src.reduce(
+                        (sum, d) => sum + (d.download_gb || d.total_gb || 0),
+                        0,
+                      );
+                      return total.toFixed(1);
+                    })()}{" "}
+                    GB
                   </span>
                 </div>
-                <div className="w-full bg-zinc-800 rounded-full h-3">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full"
-                    style={{
-                      width: `${(data.usage?.download_gb / data.usage?.quota_gb) * 100 || 0}%`,
-                    }}
-                  />
+                <div className="text-sm text-zinc-400">
+                  This{" "}
+                  {usageViewMode === "daily"
+                    ? "month"
+                    : usageViewMode === "weekly"
+                      ? "quarter"
+                      : "year"}
                 </div>
               </div>
 
@@ -844,19 +1065,30 @@ export function CustomerPortal() {
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-white font-semibold flex items-center gap-2">
                     <Upload className="w-5 h-5 text-blue-400" />
-                    Upload
+                    Total Uploaded
                   </h4>
                   <span className="text-2xl font-bold text-blue-400">
-                    {data.usage?.upload_gb?.toFixed(1) || 0} GB
+                    {(() => {
+                      const src =
+                        usageHistory.length > 0
+                          ? usageHistory
+                          : bandwidthHistory;
+                      const total = src.reduce(
+                        (sum, d) => sum + (d.upload_gb || 0),
+                        0,
+                      );
+                      return total.toFixed(1);
+                    })()}{" "}
+                    GB
                   </span>
                 </div>
-                <div className="w-full bg-zinc-800 rounded-full h-3">
-                  <div
-                    className="h-full bg-blue-500 rounded-full"
-                    style={{
-                      width: `${(data.usage?.upload_gb / data.usage?.quota_gb) * 100 || 0}%`,
-                    }}
-                  />
+                <div className="text-sm text-zinc-400">
+                  This{" "}
+                  {usageViewMode === "daily"
+                    ? "month"
+                    : usageViewMode === "weekly"
+                      ? "quarter"
+                      : "year"}
                 </div>
               </div>
             </div>
@@ -992,132 +1224,289 @@ export function CustomerPortal() {
         {/* Invoices Tab */}
         {activeTab === "invoices" && (
           <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-zinc-800/50">
+            <div className="p-4 border-b border-zinc-800/50 flex items-center justify-between">
               <h3 className="text-white font-semibold flex items-center gap-2">
                 <FileText className="w-5 h-5" />
                 All Invoices
               </h3>
+              <span className="text-sm text-zinc-500">
+                {billingInvoices.length || data.recent_invoices?.length || 0}{" "}
+                invoice(s)
+              </span>
             </div>
-            {data.recent_invoices?.length === 0 ? (
-              <div className="p-6 text-zinc-500 text-center">No invoices</div>
-            ) : (
-              <div className="divide-y divide-zinc-800/50">
-                {data.recent_invoices?.map((inv) => (
-                  <div
-                    key={inv.id}
-                    className="p-4 flex items-center justify-between hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          inv.status === "paid"
-                            ? "bg-emerald-500/10"
-                            : "bg-amber-500/10"
-                        }`}
-                      >
-                        <FileText
-                          className={`w-5 h-5 ${
-                            inv.status === "paid"
-                              ? "text-emerald-400"
-                              : "text-amber-400"
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-white font-medium">
-                          {inv.invoice_number}
-                        </div>
-                        <div className="text-zinc-500 text-xs">
-                          Due: {new Date(inv.due_date).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-white font-semibold">
-                          KES {parseFloat(inv.amount || 0).toFixed(2)}
-                        </div>
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-xs ${
-                            inv.status === "paid"
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : inv.status === "partial"
-                                ? "bg-blue-500/20 text-blue-400"
-                                : "bg-amber-500/20 text-amber-400"
-                          }`}
-                        >
-                          {inv.status}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => downloadInvoice(inv)}
-                        className="p-2 hover:bg-zinc-700/50 rounded-lg transition-colors"
-                        title="Download PDF"
-                      >
-                        <Printer className="w-4 h-4 text-zinc-400" />
-                      </button>
-                    </div>
+            {(() => {
+              const invoices =
+                billingInvoices.length > 0
+                  ? billingInvoices
+                  : data.recent_invoices || [];
+              if (invoices.length === 0) {
+                return (
+                  <div className="p-6 text-zinc-500 text-center">
+                    No invoices
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              }
+              return (
+                <div className="divide-y divide-zinc-800/50">
+                  {invoices.map((inv) => {
+                    const isPaid = inv.status === "paid" || inv.balance <= 0;
+                    const isOverdue =
+                      inv.status === "overdue" ||
+                      (inv.due_date &&
+                        new Date(inv.due_date) < new Date() &&
+                        !isPaid);
+                    const isPending =
+                      inv.status === "pending" || inv.status === "sent";
+                    return (
+                      <div
+                        key={inv.id || inv.invoice_number}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-zinc-800/30 transition-colors gap-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                              isPaid
+                                ? "bg-emerald-500/10"
+                                : isOverdue
+                                  ? "bg-red-500/10"
+                                  : "bg-amber-500/10"
+                            }`}
+                          >
+                            <FileText
+                              className={`w-5 h-5 ${
+                                isPaid
+                                  ? "text-emerald-400"
+                                  : isOverdue
+                                    ? "text-red-400"
+                                    : "text-amber-400"
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <div className="text-white font-medium">
+                              {inv.invoice_number ||
+                                inv.number ||
+                                `Invoice #${inv.id}`}
+                            </div>
+                            <div className="text-zinc-500 text-xs">
+                              {inv.invoice_date
+                                ? `Issued: ${new Date(inv.invoice_date).toLocaleDateString()}`
+                                : `Due: ${new Date(inv.due_date).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 ml-13 sm:ml-0">
+                          <div className="text-right">
+                            <div className="text-white font-semibold">
+                              KES{" "}
+                              {parseFloat(inv.amount || inv.total || 0).toFixed(
+                                2,
+                              )}
+                            </div>
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                isPaid
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : isOverdue
+                                    ? "bg-red-500/20 text-red-400"
+                                    : isPending
+                                      ? "bg-amber-500/20 text-amber-400"
+                                      : "bg-blue-500/20 text-blue-400"
+                              }`}
+                            >
+                              {isOverdue && !isPaid
+                                ? "Overdue"
+                                : isPaid
+                                  ? "Paid"
+                                  : isPending
+                                    ? "Pending"
+                                    : inv.status || "Unpaid"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!isPaid && (
+                              <button
+                                onClick={() => {
+                                  setPayAmount(
+                                    inv.balance ||
+                                      inv.amount ||
+                                      inv.total ||
+                                      "",
+                                  );
+                                  setShowPayModal(true);
+                                }}
+                                className="p-2 hover:bg-emerald-700/50 rounded-lg transition-colors text-emerald-400 hover:text-emerald-300"
+                                title="Pay Now"
+                              >
+                                <Smartphone className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => downloadInvoice(inv)}
+                              className="p-2 hover:bg-zinc-700/50 rounded-lg transition-colors"
+                              title="Download PDF"
+                            >
+                              <Printer className="w-4 h-4 text-zinc-400" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
         {/* Payments Tab */}
         {activeTab === "payments" && (
-          <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-zinc-800/50">
-              <h3 className="text-white font-semibold flex items-center gap-2">
-                <Receipt className="w-5 h-5" />
-                Payment History
-              </h3>
+          <div className="space-y-6">
+            {/* Total Paid This Year */}
+            <div className="bg-gradient-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 rounded-2xl p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                  <DollarSign className="w-7 h-7 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-emerald-300 text-sm font-medium">
+                    Total Paid This Year
+                  </p>
+                  <p className="text-3xl font-bold text-white">
+                    KES{" "}
+                    {(() => {
+                      const payments =
+                        billingPayments.length > 0
+                          ? billingPayments
+                          : paymentHistory;
+                      const thisYear = new Date().getFullYear();
+                      const total = payments
+                        .filter((p) => {
+                          const d = new Date(
+                            p.payment_date || p.created_at || p.date,
+                          );
+                          return (
+                            d.getFullYear() === thisYear &&
+                            (p.status === "completed" ||
+                              p.status === "paid" ||
+                              p.status === "success" ||
+                              !p.status)
+                          );
+                        })
+                        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+                      return total.toFixed(2);
+                    })()}
+                  </p>
+                </div>
+              </div>
             </div>
-            {paymentHistory.length === 0 ? (
-              <div className="p-6 text-zinc-500 text-center">
-                No payment history
+
+            {/* Payment List */}
+            <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-zinc-800/50 flex items-center justify-between">
+                <h3 className="text-white font-semibold flex items-center gap-2">
+                  <Receipt className="w-5 h-5" />
+                  Payment History
+                </h3>
+                <span className="text-sm text-zinc-500">
+                  {billingPayments.length || paymentHistory.length || 0}{" "}
+                  payment(s)
+                </span>
               </div>
-            ) : (
-              <div className="divide-y divide-zinc-800/50">
-                {paymentHistory.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="p-4 flex items-center justify-between hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-emerald-400" />
-                      </div>
-                      <div>
-                        <div className="text-white font-medium">
-                          {payment.method || "Cash"}
-                        </div>
-                        <div className="text-zinc-500 text-xs">
-                          {new Date(payment.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
+              {(() => {
+                const payments =
+                  billingPayments.length > 0 ? billingPayments : paymentHistory;
+                if (payments.length === 0) {
+                  return (
+                    <div className="p-6 text-zinc-500 text-center">
+                      No payment history
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-emerald-400 font-semibold">
-                          KES {parseFloat(payment.amount || 0).toFixed(2)}
+                  );
+                }
+                return (
+                  <div className="divide-y divide-zinc-800/50">
+                    {payments.map((payment) => {
+                      const pDate =
+                        payment.payment_date ||
+                        payment.created_at ||
+                        payment.date;
+                      const method =
+                        payment.method || payment.payment_method || "M-Pesa";
+                      const ref =
+                        payment.receipt_number ||
+                        payment.reference ||
+                        payment.transaction_id ||
+                        "N/A";
+                      const isSuccess =
+                        payment.status === "completed" ||
+                        payment.status === "paid" ||
+                        payment.status === "success" ||
+                        !payment.status;
+                      return (
+                        <div
+                          key={payment.id || ref}
+                          className="p-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-zinc-800/30 transition-colors gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                isSuccess
+                                  ? "bg-emerald-500/10"
+                                  : "bg-amber-500/10"
+                              }`}
+                            >
+                              <CreditCard
+                                className={`w-5 h-5 ${
+                                  isSuccess
+                                    ? "text-emerald-400"
+                                    : "text-amber-400"
+                                }`}
+                              />
+                            </div>
+                            <div>
+                              <div className="text-white font-medium capitalize">
+                                {method}
+                              </div>
+                              <div className="text-zinc-500 text-xs">
+                                {pDate
+                                  ? new Date(pDate).toLocaleDateString()
+                                  : "—"}{" "}
+                                • Ref: {ref}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 ml-13 sm:ml-0">
+                            <div className="text-right">
+                              <div className="text-emerald-400 font-semibold">
+                                KES {parseFloat(payment.amount || 0).toFixed(2)}
+                              </div>
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                  isSuccess
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-amber-500/20 text-amber-400"
+                                }`}
+                              >
+                                {isSuccess
+                                  ? "Paid"
+                                  : payment.status || "Pending"}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => downloadReceipt(payment)}
+                              className="p-2 hover:bg-zinc-700/50 rounded-lg transition-colors"
+                              title="Download Receipt"
+                            >
+                              <Printer className="w-4 h-4 text-zinc-400" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-zinc-500 text-xs">
-                          Ref: {payment.reference || "N/A"}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => downloadReceipt(payment)}
-                        className="p-2 hover:bg-zinc-700/50 rounded-lg transition-colors"
-                        title="Download Receipt"
-                      >
-                        <Printer className="w-4 h-4 text-zinc-400" />
-                      </button>
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              })()}
+            </div>
           </div>
         )}
 
@@ -1263,9 +1652,73 @@ export function CustomerPortal() {
           </div>
         )}
 
-        {/* Settings Tab */}
+        {/* Settings Tab - WiFi & Account */}
         {activeTab === "settings" && (
           <div className="space-y-6">
+            {/* PPPoE Username & Connection Info */}
+            <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
+              <h3 className="text-white font-semibold flex items-center gap-2 mb-6">
+                <Wifi className="w-5 h-5" />
+                Connection Details
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-zinc-800/50 rounded-xl p-4">
+                  <div className="text-sm text-zinc-400 mb-1">
+                    PPPoE Username
+                  </div>
+                  <div className="text-white font-medium font-mono">
+                    {data.subscription?.pppoe_username ||
+                      data.customer?.pppoe_username ||
+                      data.customer?.portal_username ||
+                      data.customer?.username ||
+                      "—"}
+                  </div>
+                </div>
+                <div className="bg-zinc-800/50 rounded-xl p-4">
+                  <div className="text-sm text-zinc-400 mb-1">Current Plan</div>
+                  <div className="text-white font-medium">
+                    {data.subscription?.plan_name || "—"}{" "}
+                    <span className="text-zinc-500 text-sm">
+                      ({data.subscription?.speed || "N/A"})
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-zinc-800/50 rounded-xl p-4">
+                  <div className="text-sm text-zinc-400 mb-1">
+                    Account Status
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        data.subscription?.status === "active"
+                          ? "bg-emerald-400"
+                          : data.subscription?.throttled
+                            ? "bg-amber-400"
+                            : "bg-red-400"
+                      }`}
+                    />
+                    <span className="text-white font-medium capitalize">
+                      {data.subscription?.throttled
+                        ? "Throttled"
+                        : data.subscription?.status || "Unknown"}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-zinc-800/50 rounded-xl p-4">
+                  <div className="text-sm text-zinc-400 mb-1">
+                    Account Number
+                  </div>
+                  <div className="text-white font-medium font-mono">
+                    {data.customer?.account_number ||
+                      data.customer?.id_number ||
+                      data.customer?.id?.substring(0, 8) ||
+                      "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* WiFi Password */}
             <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="text-white font-semibold flex items-center gap-2 mb-6">
                 <Key className="w-5 h-5" />
@@ -1274,13 +1727,9 @@ export function CustomerPortal() {
 
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <div className="text-zinc-400 text-sm">
-                    Current password status
-                  </div>
-                  <div className="text-white font-medium mt-1">
-                    {data.customer?.wifi_password
-                      ? "Password set"
-                      : "No password set"}
+                  <div className="text-zinc-400 text-sm">Current Password</div>
+                  <div className="text-white font-medium font-mono mt-1 text-lg">
+                    {data.customer?.wifi_password ? "••••••••••••" : "Not set"}
                   </div>
                 </div>
                 <button
@@ -1288,21 +1737,63 @@ export function CustomerPortal() {
                   className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                 >
                   <Lock className="w-4 h-4" />
-                  Change Password
+                  Change WiFi Password
                 </button>
               </div>
 
+              {passwordInfo?.password_changed_at && (
+                <div className="bg-zinc-800/50 rounded-xl p-4 mb-4">
+                  <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <History className="w-4 h-4" />
+                    Last changed:{" "}
+                    <span className="text-white">
+                      {new Date(
+                        passwordInfo.password_changed_at,
+                      ).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-zinc-800/50 rounded-xl p-4">
                 <div className="flex items-start gap-3">
-                  <Bell className="w-5 h-5 text-amber-400 mt-0.5" />
+                  <Bell className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
                   <div className="text-sm text-zinc-400">
                     <span className="text-amber-300 font-medium">Note:</span>{" "}
-                    Changing your WiFi password will update it on your connected
-                    devices. Make sure to update the password on all your
-                    devices after changing.
+                    Changing your WiFi password will disconnect all currently
+                    connected devices. You will need to update the password on
+                    each device.
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Account Credentials */}
+            <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800/50 rounded-2xl p-6">
+              <h3 className="text-white font-semibold flex items-center gap-2 mb-6">
+                <User className="w-5 h-5" />
+                Portal Account
+              </h3>
+
+              <div className="bg-zinc-800/50 rounded-xl p-4 mb-4">
+                <div className="text-sm text-zinc-400 mb-1">
+                  Portal Username
+                </div>
+                <div className="text-white font-medium">
+                  {data.customer?.portal_username ||
+                    data.customer?.email ||
+                    data.customer?.phone ||
+                    "—"}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                Change Username or Password
+              </button>
             </div>
           </div>
         )}
@@ -1531,39 +2022,6 @@ export function CustomerPortal() {
                   </button>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Settings Tab */}
-        {activeTab === "settings" && (
-          <div className="space-y-6">
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <Lock className="w-5 h-5 text-blue-400" />
-                Account Settings
-              </h3>
-
-              <div className="space-y-4">
-                <div className="bg-zinc-800 rounded-lg p-4">
-                  <div className="text-sm text-zinc-400 mb-1">
-                    Current Username
-                  </div>
-                  <div className="text-white font-medium">
-                    {data.customer.portal_username ||
-                      data.customer.email ||
-                      data.customer.phone}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowSettingsModal(true)}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Lock className="w-4 h-4" />
-                  Change Username or Password
-                </button>
-              </div>
             </div>
           </div>
         )}
