@@ -175,28 +175,43 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-slate-900 to-gray-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo and Title */}
+    <div
+      className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(ellipse at top, #1a1a2e 0%, #0f1117 50%, #0a0a0f 100%)",
+      }}
+    >
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-violet-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-3xl" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 mb-5 shadow-2xl shadow-blue-500/20 ring-4 ring-blue-500/10">
+            <Shield className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            MikroTik Billing
+          <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">
+            <span className="bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent">
+              MikroTik
+            </span>{" "}
+            Billing
           </h1>
-          <p className="text-gray-400">Sign in to manage your ISP</p>
+          <p className="text-zinc-400 text-sm">
+            Sign in to manage your ISP network
+          </p>
         </div>
 
-        {/* Login Form */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+        <div className="bg-zinc-900/80 backdrop-blur-xl rounded-2xl p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
           {step === "password" && (
-            <div className="space-y-4">
-              {/* Google Sign-In */}
+            <div className="space-y-5">
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-700 font-medium py-3 px-4 rounded-lg border border-gray-300 transition-colors"
+                className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-700 font-semibold py-3 px-4 rounded-xl border border-gray-200 transition-all hover:shadow-md"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path
@@ -221,33 +236,32 @@ export default function LoginPage() {
 
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-zinc-700"></div>
+                  <div className="w-full border-t border-zinc-800"></div>
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="bg-[#0f1117] px-2 text-zinc-500">or</span>
+                  <span className="bg-zinc-900 px-3 text-zinc-500 font-medium uppercase tracking-wider">
+                    or continue with email
+                  </span>
                 </div>
               </div>
 
-              <form onSubmit={handleLogin} className="space-y-6">
-                {/* Email */}
+              <form onSubmit={handleLogin} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
                     Email Address
                   </label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="admin@example.com"
+                    className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                    placeholder="you@example.com"
                     required
                     autoFocus
                   />
                 </div>
-
-                {/* Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
                     Password
                   </label>
                   <div className="relative">
@@ -255,14 +269,14 @@ export default function LoginPage() {
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12"
-                      placeholder="Enter your password"
+                      className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all pr-12"
+                      placeholder="••••••••"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
                     >
                       {showPassword ? (
                         <EyeOff className="w-5 h-5" />
@@ -272,12 +286,10 @@ export default function LoginPage() {
                     </button>
                   </div>
                 </div>
-
-                {/* Submit */}
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -293,43 +305,51 @@ export default function LoginPage() {
           )}
 
           {step === "2fa" && (
-            <form onSubmit={handle2FA} className="space-y-4">
-              <p className="text-sm text-zinc-400 text-center">
-                Enter the 6-digit code from your authenticator app
-              </p>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={twoFactorCode}
-                onChange={(e) =>
-                  setTwoFactorCode(e.target.value.replace(/\D/g, ""))
-                }
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest"
-                placeholder="000000"
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={twoFactorCode.length !== 6 || loading}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50"
-              >
-                {loading ? "Verifying..." : "Verify"}
-              </button>
+            <div className="space-y-5">
+              <div className="text-center">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-500/10 mb-3">
+                  <Shield className="w-7 h-7 text-blue-400" />
+                </div>
+                <h3 className="text-white font-semibold text-lg">
+                  Two-Factor Authentication
+                </h3>
+                <p className="text-zinc-400 text-sm mt-1">
+                  Enter the 6-digit code from your authenticator app
+                </p>
+              </div>
+              <form onSubmit={handle2FA} className="space-y-5">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={twoFactorCode}
+                  onChange={(e) =>
+                    setTwoFactorCode(e.target.value.replace(/\D/g, ""))
+                  }
+                  className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-4 text-white text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder="000000"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={twoFactorCode.length !== 6 || loading}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3.5 rounded-xl font-semibold disabled:opacity-50 shadow-lg shadow-blue-500/25"
+                >
+                  {loading ? "Verifying..." : "Verify"}
+                </button>
+              </form>
               <button
                 type="button"
                 onClick={() => setStep("password")}
-                className="w-full text-zinc-500 text-sm"
+                className="w-full text-zinc-500 text-sm hover:text-zinc-300 transition-colors"
               >
-                Back to login
+                ← Back to login
               </button>
-            </form>
+            </div>
           )}
-
         </div>
 
-        {/* Footer */}
-        <p className="text-center text-gray-500 text-sm mt-8">
+        <p className="text-center text-zinc-600 text-xs mt-8">
           Secure ISP Management Platform
         </p>
       </div>
