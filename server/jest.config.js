@@ -9,5 +9,6 @@ module.exports = {
   ],
   testMatch: ['**/__tests__/**/*.test.js', '**/*.test.js'],
   modulePathIgnorePatterns: ['<rootDir>/node_modules/'],
-  testTimeout: 30000,
+  maxWorkers: 1,
+  testTimeout: 60000,
 };

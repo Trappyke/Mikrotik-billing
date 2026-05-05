@@ -25,6 +25,39 @@ function getServerBaseUrl(req, explicitBaseUrl) {
   );
 }
 
+function parseTokenMetadata(tokenRecord) {
+  if (!tokenRecord?.metadata) {
+    return {};
+  }
+  if (typeof tokenRecord.metadata === "object") {
+    return tokenRecord.metadata;
+  }
+  try {
+    return JSON.parse(tokenRecord.metadata);
+  } catch (error) {
+    logger.warn("[Enrollment] Could not parse token metadata", {
+      error: error.message,
+    });
+    return {};
+  }
+}
+
+function getEnrollmentManagementCredentials(tokenRecord, discovered, overrides = {}) {
+  const metadata = parseTokenMetadata(tokenRecord);
+  const password =
+    overrides.mgmt_password ||
+    discovered?.mgmt_password ||
+    metadata.mgmt_password ||
+    null;
+  const username =
+    overrides.mgmt_username ||
+    discovered?.mgmt_username ||
+    metadata.mgmt_username ||
+    (password ? "admin" : null);
+
+  return { username, password };
+}
+
 function buildProvisionCommand(serverUrl, token, method = "script", delay = 0) {
   const cleanBaseUrl = serverUrl.replace(/\/$/, "");
   const scriptUrl = `${cleanBaseUrl}/mikrotik/provision/${token}`;
@@ -248,6 +281,8 @@ router.get("/provision/callback/:token", async (req, res) => {
     );
 
     // Billing activation handled by auto-complete endpoint
+    const activationStatus =
+      "Billing activation skipped: handled by auto-complete endpoint";
     await getDb().query(
       "INSERT INTO provision_logs (id, token, router_id, ip_address, user_agent, action, status, details) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
       [
@@ -258,7 +293,7 @@ router.get("/provision/callback/:token", async (req, res) => {
         ua,
         "billing_activation",
         "skipped",
-        "Billing activation handled by auto-complete endpoint",
+        activationStatus,
       ],
     );
 
@@ -622,7 +657,7 @@ router.get("/enroll/bootstrap/:token", async (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const ua = req.get("User-Agent") || "RouterOS";
 
-    const mgmtPass = req.query.mgmt_pass || "";
+    const mgmtPass = req.query.mgmt_pass || req.body?.mgmt_pass || "";
 
     const tokenRecord = await findEnrollmentToken(token);
 
@@ -770,7 +805,6 @@ router.get("/enroll/bootstrap/:token", async (req, res) => {
       "} on-error={}",
       "",
       "# ── Step 2: Report system info via GET (v6 + v7 compatible) ──",
-      ':local reportUrl ($serverUrl . "/mikrotik/enroll/report/" . $enrollToken . "?identity=" . [$ztpUrlEncode $sysIdentity] . "&model=" . [$ztpUrlEncode $sysModel] . "&version=" . [$ztpUrlEncode $sysVersion] . "&uptime=" . [$ztpUrlEncode $sysUptime] . "&serial=" . [$ztpUrlEncode $sysSerial] . "&mac=" . [$ztpUrlEncode $sysMac])',
       ':local reportUrl ($serverUrl . "/mikrotik/enroll/report/" . $enrollToken . "?identity=" . [$ztpUrlEncode $sysIdentity] . "&model=" . [$ztpUrlEncode $sysModel] . "&version=" . [$ztpUrlEncode $sysVersion] . "&uptime=" . [$ztpUrlEncode $sysUptime] . "&serial=" . [$ztpUrlEncode $sysSerial] . "&mac=" . [$ztpUrlEncode $sysMac])',
       ":if ([:len $ztpPass] > 0) do={",
       `:do { ${fetchCmd('($reportUrl . "&mgmt_user=admin&mgmt_pass=" . [$ztpUrlEncode $ztpPass])')} } on-error={}`,
@@ -930,8 +964,6 @@ router.all("/enroll/report/:token", async (req, res) => {
     const ua = req.get("User-Agent") || "RouterOS";
     const raw = { ...req.query, ...req.body };
 
-    const mgmtPass = req.query.mgmt_pass || "";
-
     const tokenRecord = await findEnrollmentToken(token);
     if (!tokenRecord) {
       return res.type("text/plain").send("# ERROR: Invalid enrollment token");
@@ -985,8 +1017,6 @@ router.get("/enroll/iface/:token", async (req, res) => {
       return res.type("text/plain").send("# SKIP: no name");
     }
 
-    const mgmtPass = req.query.mgmt_pass || "";
-
     const tokenRecord = await findEnrollmentToken(token);
     if (!tokenRecord) {
       return res.type("text/plain").send("# ERROR: Invalid token");
@@ -1023,8 +1053,6 @@ router.get("/enroll/addr/:token", async (req, res) => {
     if (!addr) {
       return res.type("text/plain").send("# SKIP: no address");
     }
-
-    const mgmtPass = req.query.mgmt_pass || "";
 
     const tokenRecord = await findEnrollmentToken(token);
     if (!tokenRecord) {
@@ -1145,7 +1173,8 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
           .filter(Boolean)
       : null;
 
-    const mgmtPass = req.query.mgmt_pass || "";
+    const mgmtPass = req.query.mgmt_pass || req.body?.mgmt_pass || "";
+    const mgmtUser = req.query.mgmt_user || req.body?.mgmt_user || null;
 
     const tokenRecord = await findEnrollmentToken(token);
     if (!tokenRecord) {
@@ -1216,8 +1245,8 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
     }
 
     // 3. Create router record with provision token
-    const provisionToken = provisionStore.generateToken();
-    const routerId = `router-${uuidv4().slice(0, 8)}`;
+    let provisionToken = provisionStore.generateToken();
+    let routerId = discovered.router_id || tokenRecord.router_id || null;
     const routerName = discovered.identity || "ztp-router";
     const wanIface =
       wanOverride || discovered.suggested_wan_interface || "ether1";
@@ -1225,10 +1254,22 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
     const lanPorts = lanOverride ||
       discovered.suggested_lan_ports || ["ether2", "ether3", "ether4"];
     const macAddr = discovered.primary_mac || "00:00:00:00:00:00";
+    const managementCredentials = getEnrollmentManagementCredentials(
+      tokenRecord,
+      discovered,
+      { mgmt_username: mgmtUser, mgmt_password: mgmtPass },
+    );
+    const mgmtPasswordEncrypted = managementCredentials.password
+      ? zeroTouchBilling.encryptForMikrotik(managementCredentials.password)
+      : null;
 
     if (!global.dbAvailable) {
       const store = provisionStore.extendStore();
-      if (!store.routers.find((r) => r.provision_token === provisionToken)) {
+      let routerRecord = routerId
+        ? store.routers.find((r) => r.id === routerId)
+        : null;
+      if (!routerRecord) {
+        routerId = routerId || `router-${uuidv4().slice(0, 8)}`;
         store.routers.push({
           id: routerId,
           project_id: null,
@@ -1253,25 +1294,28 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
           pppoe_interface: "",
           pppoe_service_name: "",
           mgmt_port: 8728,
-          mgmt_username: discovered.mgmt_username || "",
-          mgmt_password_encrypted: discovered.mgmt_password
-            ? zeroTouchBilling.encryptForMikrotik(discovered.mgmt_password)
-            : null,
+          mgmt_username: managementCredentials.username || "",
+          mgmt_password_encrypted: mgmtPasswordEncrypted,
+          connection_type: "api",
           notes: "",
           lan_ports: lanPorts,
           created_at: now,
           updated_at: now,
         });
+      } else {
+        provisionToken = routerRecord.provision_token;
       }
+      discovered.router_id = routerId;
     } else {
-      const existingRouter = await getDb().query(
-        "SELECT id FROM routers WHERE provision_token = $1",
-        [provisionToken],
-      );
+      let existingRouter = { rows: [] };
+      if (routerId) {
+        existingRouter = await getDb().query(
+          "SELECT id, provision_token FROM routers WHERE id = $1",
+          [routerId],
+        );
+      }
       if (existingRouter.rows.length === 0) {
-        const mgmtPasswordEncrypted = discovered.mgmt_password
-          ? zeroTouchBilling.encryptForMikrotik(discovered.mgmt_password)
-          : null;
+        routerId = routerId || `router-${uuidv4().slice(0, 8)}`;
         await getDb().query(
           `INSERT INTO routers (id, name, identity, model, mac_address, ip_address, wan_interface, lan_interface, provision_token, provision_status, mgmt_username, mgmt_password_encrypted, created_at, updated_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
@@ -1285,11 +1329,40 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
             wanIface,
             lanIface,
             provisionToken,
-            discovered.mgmt_username || null,
+            managementCredentials.username,
             mgmtPasswordEncrypted,
           ],
         );
+      } else {
+        provisionToken = existingRouter.rows[0].provision_token;
       }
+
+      await getDb().query(
+        `UPDATE discovered_routers
+         SET router_id = $1,
+             status = 'approved',
+             approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE enrollment_token = $2`,
+        [routerId, token],
+      );
+    }
+
+    if (global.dbAvailable) {
+      await getDb().query(
+        `UPDATE enrollment_tokens
+         SET status = $1,
+             used_at = COALESCE(used_at, CURRENT_TIMESTAMP),
+             router_id = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE token = $3`,
+        ["approved", routerId, token],
+      );
+    } else {
+      tokenRecord.status = "approved";
+      tokenRecord.used_at = tokenRecord.used_at || now;
+      tokenRecord.router_id = routerId;
+      tokenRecord.updated_at = now;
     }
 
     logger.info(
@@ -1301,20 +1374,18 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
       "AUTOCOMPLETE: routerId=" +
         routerId +
         " user=" +
-        (discovered.mgmt_username || "none") +
+        (managementCredentials.username || "none") +
         " passLen=" +
-        (mgmtPass || discovered.mgmt_password || "").length,
+        (managementCredentials.password || "").length,
     );
     try {
-      const billingResult = await zeroTouchBilling.activateRouterInBilling(
-        routerId,
-        {
-          mgmt_username: discovered.mgmt_username || "admin",
-          mgmt_password: mgmtPass || discovered.mgmt_password || null,
-        },
-      );
+      const billingResult =
+        await zeroTouchBilling.activateRouterInBilling(routerId, {
+          mgmt_username: managementCredentials.username,
+          mgmt_password: managementCredentials.password,
+        });
       logger.info(
-        `[Enrollment] Billing activation for ${routerName}: ${billingResult.success ? "linked" : "skipped"}`,
+        `[Enrollment] Billing activation for ${routerName}: ${billingResult.success ? "linked" : `skipped (${billingResult.error || "missing credentials"})`}`,
       );
     } catch (e) {
       logger.warn(
@@ -1346,6 +1417,9 @@ router.get("/enroll/auto-complete/:token", async (req, res) => {
 router.get("/ztp/one-shot/:token", async (req, res) => {
   try {
     const { token } = req.params;
+    const tokenRecord = await findEnrollmentToken(token);
+    const metadata = parseTokenMetadata(tokenRecord);
+    const mgmtPass = req.query.mgmt_pass || metadata.mgmt_password || "";
 
     const serverUrl = getServerBaseUrl(req);
     const cleanUrl = serverUrl.replace(/\/$/, "");
@@ -1377,14 +1451,14 @@ router.get("/ztp/one-shot/:token", async (req, res) => {
       '#   :global ztpMgmtPass "password"',
       ":global ztpMgmtUser; :global ztpMgmtPass;",
       ':local ztpPass "' + mgmtPass + '"',
+      ":local mgmtUser $ztpMgmtUser",
+      ":local mgmtPass $ztpMgmtPass",
       ":if ([:len $ztpPass] > 0) do={",
       '  :put "[ZTP] Auto-generated admin password: $ztpPass"',
       "  /user set admin password=$ztpPass",
       '  :set mgmtUser "admin"',
       "  :set mgmtPass $ztpPass",
       "}",
-      ":local mgmtUser $ztpMgmtUser",
-      ":local mgmtPass $ztpMgmtPass",
       ':if ([:len $mgmtUser] > 0) do={ :log info message="[ZTP] Mgmt user provided: $mgmtUser" }',
       "",
       "# ── Optional: Port selection overrides ──",
