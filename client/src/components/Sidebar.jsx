@@ -93,12 +93,12 @@ const navItems = [
     feature: "integrations",
   },
   {
-  {
     to: "/tenant-branding",
     icon: Palette,
     label: "Tenant Branding",
     feature: "settings",
   },
+  {
     to: "/settings",
     icon: SettingsIcon,
     label: "Settings",
@@ -225,8 +225,6 @@ const billingItems = [
     label: "Speed Test",
     feature: "speedtest",
   },
-  // { to: '/alerts', icon: AlertTriangle, label: 'Alerts', feature: 'alerts' },
-  // { to: '/monitoring', icon: AlertTriangle, label: 'Monitoring', feature: 'monitoring' },
   { to: "/radius", icon: Shield, label: "RADIUS", feature: "radius" },
   {
     to: "/radius-import",
@@ -440,6 +438,20 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             >
               <Users className="w-[18px] h-[18px] flex-shrink-0" />
               <span className="truncate">User Management</span>
+            </NavLink>
+            <NavLink
+              to="/tenant-branding"
+              onClick={onCloseMobile}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? "bg-blue-500/10 text-blue-400"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                }`
+              }
+            >
+              <Palette className="w-[18px] h-[18px] flex-shrink-0" />
+              <span className="truncate">Tenant Branding</span>
             </NavLink>
             <NavLink
               to="/audit-logs"
