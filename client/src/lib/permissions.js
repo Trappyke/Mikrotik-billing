@@ -59,6 +59,7 @@ const DEFAULT_FEATURE_ACCESS = {
     "invoices",
     "payments",
     "wallet",
+    "merge-customers",
     "mpesa-reconcile",
     "sms",
     "whatsapp",

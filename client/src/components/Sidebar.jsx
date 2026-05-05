@@ -39,6 +39,7 @@ import {
   Radio,
   Gauge,
   Router,
+  GitMerge,
   Building2,
   Sun,
   Moon,
@@ -133,6 +134,12 @@ const billingItems = [
     feature: "payments",
   },
   { to: "/billing-wallet", icon: Wallet, label: "Wallet", feature: "wallet" },
+  {
+    to: "/merge-customers",
+    icon: GitMerge,
+    label: "Merge Customers",
+    feature: "merge-customers",
+  },
   {
     to: "/mpesa-reconcile",
     icon: Wallet,

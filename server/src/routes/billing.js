@@ -284,7 +284,12 @@ router.put("/customers/:id", async (req, res) => {
 
     if (req.body.plan_id) {
       try {
-    console.log("[CUSTOMER UPDATE] plan_id:", req.body.plan_id, "customer_id:", req.params.id);
+        console.log(
+          "[CUSTOMER UPDATE] plan_id:",
+          req.body.plan_id,
+          "customer_id:",
+          req.params.id,
+        );
         const existingSub = (await global.dbAvailable)
           ? (
               await (global.db || require("../db/memory")).query(
@@ -1636,6 +1641,210 @@ router.get("/staff-points/:userId", async (req, res) => {
     res.json(result.rows);
   } catch (e) {
     console.error("Get staff point history error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── CUSTOMER MERGE ───
+router.post("/customers/merge", async (req, res) => {
+  try {
+    const { source_id, target_id } = req.body;
+    if (!source_id || !target_id)
+      return res
+        .status(400)
+        .json({ error: "source_id and target_id required" });
+    if (source_id === target_id)
+      return res
+        .status(400)
+        .json({ error: "Cannot merge a customer into itself" });
+
+    const currentDb = global.dbAvailable ? global.db : require("../db/memory");
+
+    // Verify both customers exist
+    const source = await currentDb.query(
+      "SELECT * FROM customers WHERE id = $1",
+      [source_id],
+    );
+    const target = await currentDb.query(
+      "SELECT * FROM customers WHERE id = $1",
+      [target_id],
+    );
+    if (source.rows.length === 0)
+      return res.status(404).json({ error: "Source customer not found" });
+    if (target.rows.length === 0)
+      return res.status(404).json({ error: "Target customer not found" });
+
+    const results = {
+      invoices: 0,
+      payments: 0,
+      subscriptions: 0,
+      tickets: 0,
+      wallet: 0,
+    };
+
+    if (global.dbAvailable) {
+      // ─── PostgreSQL mode ───
+      const invRes = await currentDb.query(
+        "UPDATE invoices SET customer_id = $1 WHERE customer_id = $2",
+        [target_id, source_id],
+      );
+      results.invoices = invRes.rowCount || 0;
+
+      const payRes = await currentDb.query(
+        "UPDATE payments SET customer_id = $1 WHERE customer_id = $2",
+        [target_id, source_id],
+      );
+      results.payments = payRes.rowCount || 0;
+
+      const subRes = await currentDb.query(
+        "UPDATE subscriptions SET customer_id = $1 WHERE customer_id = $2",
+        [target_id, source_id],
+      );
+      results.subscriptions = subRes.rowCount || 0;
+
+      const tickRes = await currentDb.query(
+        "UPDATE tickets SET customer_id = $1 WHERE customer_id = $2",
+        [target_id, source_id],
+      );
+      results.tickets = tickRes.rowCount || 0;
+
+      // Merge wallet balance
+      const sourceWallet = await currentDb.query(
+        "SELECT * FROM wallets WHERE customer_id = $1",
+        [source_id],
+      );
+      const targetWallet = await currentDb.query(
+        "SELECT * FROM wallets WHERE customer_id = $1",
+        [target_id],
+      );
+      if (sourceWallet.rows.length > 0) {
+        const srcBal = parseFloat(sourceWallet.rows[0].balance) || 0;
+        if (targetWallet.rows.length > 0) {
+          const newBal =
+            (parseFloat(targetWallet.rows[0].balance) || 0) + srcBal;
+          await currentDb.query(
+            "UPDATE wallets SET balance = $1 WHERE customer_id = $2",
+            [newBal, target_id],
+          );
+          await currentDb.query(
+            "UPDATE wallet_transactions SET wallet_id = $1 WHERE wallet_id = $2",
+            [targetWallet.rows[0].id, sourceWallet.rows[0].id],
+          );
+          await currentDb.query("DELETE FROM wallets WHERE customer_id = $1", [
+            source_id,
+          ]);
+        } else {
+          await currentDb.query(
+            "UPDATE wallets SET customer_id = $1 WHERE customer_id = $2",
+            [target_id, source_id],
+          );
+        }
+        results.wallet = srcBal;
+      }
+
+      // Deactivate source customer
+      await currentDb.query(
+        "UPDATE customers SET status = 'merged', notes = CONCAT(COALESCE(notes,''), ' | Merged into ', $1, ' on ', NOW()::text) WHERE id = $2",
+        [target_id, source_id],
+      );
+    } else {
+      // ─── In-memory mode ───
+      const billingStore = require("../db/billingStore");
+      billingStore.store.invoices.forEach((i) => {
+        if (i.customer_id === source_id) {
+          i.customer_id = target_id;
+          results.invoices++;
+        }
+      });
+      billingStore.store.payments.forEach((p) => {
+        if (p.customer_id === source_id) {
+          p.customer_id = target_id;
+          results.payments++;
+        }
+      });
+      billingStore.store.subscriptions.forEach((s) => {
+        if (s.customer_id === source_id) {
+          s.customer_id = target_id;
+          results.subscriptions++;
+        }
+      });
+      billingStore.store.tickets.forEach((t) => {
+        if (t.customer_id === source_id) {
+          t.customer_id = target_id;
+          results.tickets++;
+        }
+      });
+
+      // Merge wallet in memory
+      const walletModule = require("../db/walletStore");
+      const walletStoreRef = walletModule.walletStore;
+      const srcWallet = walletStoreRef.wallets.find(
+        (w) => w.customer_id === source_id,
+      );
+      const tgtWallet = walletStoreRef.wallets.find(
+        (w) => w.customer_id === target_id,
+      );
+      if (srcWallet) {
+        const srcBal = parseFloat(srcWallet.balance) || 0;
+        if (tgtWallet) {
+          tgtWallet.balance = (parseFloat(tgtWallet.balance) || 0) + srcBal;
+          tgtWallet.updated_at = new Date().toISOString();
+          // Move transactions
+          walletStoreRef.transactions.forEach((t) => {
+            if (t.customer_id === source_id) {
+              t.customer_id = target_id;
+              t.wallet_id = tgtWallet.id;
+            }
+          });
+          // Remove source wallet
+          const srcIdx = walletStoreRef.wallets.indexOf(srcWallet);
+          if (srcIdx !== -1) walletStoreRef.wallets.splice(srcIdx, 1);
+        } else {
+          srcWallet.customer_id = target_id;
+          srcWallet.updated_at = new Date().toISOString();
+          walletStoreRef.transactions.forEach((t) => {
+            if (t.customer_id === source_id) {
+              t.customer_id = target_id;
+            }
+          });
+        }
+        results.wallet = srcBal;
+      }
+
+      const src = billingStore.store.customers.find((c) => c.id === source_id);
+      if (src) {
+        src.status = "merged";
+        src.notes =
+          (src.notes || "") +
+          ` | Merged into ${target_id} on ${new Date().toISOString()}`;
+      }
+    }
+
+    // Log audit
+    if (global.dbAvailable) {
+      await currentDb.query(
+        "INSERT INTO billing_audit_logs (id, user_id, action, entity_type, entity_id, old_values, new_values, created_at) VALUES ($1, $2, 'merge', 'customer', $3, $4, $5, NOW())",
+        [
+          require("uuid").v4(),
+          req.user?.id || null,
+          target_id,
+          JSON.stringify({
+            source: source.rows[0].name,
+            target: target.rows[0].name,
+          }),
+          JSON.stringify(results),
+        ],
+      );
+    }
+
+    res.json({
+      success: true,
+      source_name: source.rows[0].name,
+      target_name: target.rows[0].name,
+      ...results,
+    });
+  } catch (e) {
+    console.error("Customer merge error:", e);
     res.status(500).json({ error: e.message });
   }
 });
