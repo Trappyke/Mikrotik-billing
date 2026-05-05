@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
-const speakeasy = require("speakeasy");
+const { authenticator } = require("otplib");
 const QRCode = require("qrcode");
 const { JWT_SECRET } = require("../middleware/auth");
 const JWT_EXPIRES = process.env.JWT_EXPIRES || "7d";
@@ -122,11 +122,7 @@ router.post("/login", authLimiter, async (req, res) => {
         });
       }
 
-      const isValid = speakeasy.totp.verify({ encoding: "base32",
-        token: two_factor_code,
-        secret: user.rows[0].two_factor_secret,
-        window: 2,
-      });
+      const isValid = authenticator.verify({ token: two_factor_code, secret: user.rows[0].two_factor_secret });
 
       if (!isValid) {
         return res.status(401).json({ error: "Invalid 2FA code" });
@@ -286,7 +282,7 @@ const authenticate = async (req, res, next) => {
 // ─── 2FA SETUP ─── Generate secret and QR code
 router.post("/2fa/setup", authenticate, async (req, res) => {
   try {
-    const secret = speakeasy.generateSecret().base32;
+    const secret = authenticator.generateSecret();
     const db = getDb();
 
     await db.query("UPDATE users SET two_factor_secret = $1 WHERE id = $2", [
@@ -294,12 +290,7 @@ router.post("/2fa/setup", authenticate, async (req, res) => {
       req.user.id,
     ]);
 
-    const otpauth = speakeasy.otpauthURL({
-      issuer: "MikroTik Billing",
-      label: req.user.email,
-      secret,
-      
-    });
+    const otpauth = authenticator.keyuri(req.user.email, "MikroTik Billing", secret);
     const qrCode = await QRCode.toDataURL(otpauth);
 
     res.json({ secret, qrCode });
@@ -324,7 +315,7 @@ router.post("/2fa/enable", authenticate, async (req, res) => {
 
     if (!secret) return res.status(400).json({ error: "Setup 2FA first" });
 
-    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code, window: 2 });
+    const isValid = authenticator.verify({ token: code, secret });
     console.log("[2FA ENABLE] Verify result:", isValid);
     if (!isValid) return res.status(400).json({ error: "Invalid code" });
 
@@ -349,7 +340,7 @@ router.post("/2fa/disable", authenticate, async (req, res) => {
     );
     const secret = result.rows[0]?.two_factor_secret;
 
-    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code, window: 2 });
+    const isValid = authenticator.verify({ token: code, secret });
     if (!isValid) return res.status(400).json({ error: "Invalid code" });
 
     await db.query(
