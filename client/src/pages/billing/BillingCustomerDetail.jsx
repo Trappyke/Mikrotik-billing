@@ -287,7 +287,7 @@ export function BillingCustomerDetail() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-5 text-center">
           <div className="text-sm text-slate-400 mb-1">Total Billed</div>
           <div className="text-2xl font-bold text-white">

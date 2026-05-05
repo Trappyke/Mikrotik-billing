@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { BrandingProvider } from "./contexts/BrandingContext";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { Menu } from "lucide-react";
 import axios from "axios";
 import { Sidebar } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
@@ -70,6 +71,7 @@ import CustomerPortalLogin from "./pages/CustomerPortalLogin";
 
 function App() {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Heartbeat to keep user online status updated
   useEffect(() => {
@@ -136,8 +138,44 @@ function App() {
           element={
             <ProtectedRoute>
               <div className="flex h-screen bg-[#0f1117]">
-                <Sidebar onSearchOpen={() => setSearchOpen(true)} />
+                {/* Mobile overlay */}
+                {mobileMenuOpen && (
+                  <div
+                    className="fixed inset-0 bg-black/60 z-20 lg:hidden"
+                    onClick={() => setMobileMenuOpen(false)}
+                  />
+                )}
+
+                {/* Sidebar - hidden on mobile by default, shown when toggled */}
+                <div
+                  className={`
+                    fixed lg:static inset-y-0 left-0 z-30
+                    transform transition-transform duration-300
+                    ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+                    lg:translate-x-0
+                  `}
+                >
+                  <Sidebar
+                    onSearchOpen={() => setSearchOpen(true)}
+                    onCloseMobile={() => setMobileMenuOpen(false)}
+                  />
+                </div>
+
+                {/* Main content */}
                 <main className="flex-1 overflow-auto">
+                  {/* Mobile header bar */}
+                  <div className="lg:hidden flex items-center justify-between p-4 border-b border-zinc-800/50">
+                    <button
+                      onClick={() => setMobileMenuOpen(true)}
+                      className="text-zinc-400"
+                    >
+                      <Menu className="w-5 h-5" />
+                    </button>
+                    <span className="text-sm font-semibold text-white">
+                      MTK Billing
+                    </span>
+                    <div className="w-5" /> {/* spacer */}
+                  </div>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/project/:id" element={<ProjectDetail />} />

@@ -547,7 +547,7 @@ export function BillingCustomers() {
                   </span>
                 </div>
               </CardHeader>
-              <CardContent className="p-4 grid grid-cols-2 gap-3 text-sm border-t border-zinc-800">
+              <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm border-t border-zinc-800">
                 <div className="text-zinc-400">
                   Email:{" "}
                   <span className="text-white truncate block">
@@ -653,7 +653,7 @@ export function BillingCustomers() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4 pt-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="customer-name">Name *</Label>
                     <Input

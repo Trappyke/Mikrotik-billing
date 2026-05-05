@@ -264,7 +264,7 @@ export function BackupPage() {
       </div>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <div className="text-2xl font-bold text-white">
             {schedules.length}
@@ -464,7 +464,7 @@ export function BackupPage() {
                     placeholder="Main Router"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>IP Address</Label>
                     <Input
@@ -501,7 +501,7 @@ export function BackupPage() {
                     placeholder="admin"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>Schedule</Label>
                     <select
@@ -586,7 +586,7 @@ export function BackupPage() {
                     placeholder="192.168.88.1"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>Port</Label>
                     <Input

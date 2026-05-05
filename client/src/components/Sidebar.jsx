@@ -43,6 +43,7 @@ import {
   Sun,
   Moon,
   Upload,
+  X,
 } from "lucide-react";
 import { clearAuth } from "../lib/auth";
 import { SearchButton } from "./GlobalSearch";
@@ -242,7 +243,7 @@ const billingItems = [
   { to: "/inventory", icon: Package, label: "Inventory", feature: "inventory" },
 ];
 
-export function Sidebar({ onSearchOpen }) {
+export function Sidebar({ onSearchOpen, onCloseMobile }) {
   const [billingOpen, setBillingOpen] = useState(false);
   const [user, setUser] = useState(null);
   const branding = useBranding();
@@ -307,6 +308,12 @@ export function Sidebar({ onSearchOpen }) {
           </div>
         </NavLink>
         <SearchButton onClick={onSearchOpen} />
+        <button
+          onClick={onCloseMobile}
+          className="lg:hidden p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Nav */}
@@ -318,6 +325,7 @@ export function Sidebar({ onSearchOpen }) {
               key={item.to}
               to={item.to}
               end={item.to === "/"}
+              onClick={onCloseMobile}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -371,6 +379,7 @@ export function Sidebar({ onSearchOpen }) {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  onClick={onCloseMobile}
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
                       isActive
@@ -401,6 +410,7 @@ export function Sidebar({ onSearchOpen }) {
             </div>
             <NavLink
               to="/users"
+              onClick={onCloseMobile}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -414,6 +424,7 @@ export function Sidebar({ onSearchOpen }) {
             </NavLink>
             <NavLink
               to="/audit-logs"
+              onClick={onCloseMobile}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -427,6 +438,7 @@ export function Sidebar({ onSearchOpen }) {
             </NavLink>
             <NavLink
               to="/webhooks"
+              onClick={onCloseMobile}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive

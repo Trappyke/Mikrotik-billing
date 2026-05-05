@@ -109,7 +109,7 @@ export function AgentResellerPage() {
       <h2 className="text-2xl font-bold text-white mb-6">Agents & Vouchers</h2>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 text-slate-400 text-sm mb-1"><Users className="w-4 h-4" /> Agents</div>
