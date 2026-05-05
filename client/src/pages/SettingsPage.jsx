@@ -51,7 +51,6 @@ import { useToastStore } from "../stores/toastStore";
 
 const API = import.meta.env.VITE_API_URL || "/api";
 
-
 function TwoFactorSetup() {
   const [status, setStatus] = useState(null);
   const [qrCode, setQrCode] = useState(null);
@@ -60,7 +59,10 @@ function TwoFactorSetup() {
   const [msg, setMsg] = useState(null);
 
   useEffect(() => {
-    axios.get(`${API}/auth/2fa/status`).then(r => setStatus(r.data)).catch(() => {});
+    axios
+      .get(`${API}/auth/2fa/status`)
+      .then((r) => setStatus(r.data))
+      .catch(() => {});
   }, []);
 
   const handleSetup = async () => {
@@ -68,8 +70,13 @@ function TwoFactorSetup() {
     try {
       const { data } = await axios.post(`${API}/auth/2fa/setup`);
       setQrCode(data.qrCode);
-      setMsg({ type: "info", text: "Scan this QR code with Google Authenticator" });
-    } catch (e) { setMsg({ type: "error", text: "Setup failed" }); }
+      setMsg({
+        type: "info",
+        text: "Scan this QR code with Google Authenticator",
+      });
+    } catch (e) {
+      setMsg({ type: "error", text: "Setup failed" });
+    }
     setLoading(false);
   };
 
@@ -82,7 +89,9 @@ function TwoFactorSetup() {
       setQrCode(null);
       setCode("");
       setMsg({ type: "success", text: "2FA enabled successfully!" });
-    } catch (e) { setMsg({ type: "error", text: "Invalid code" }); }
+    } catch (e) {
+      setMsg({ type: "error", text: "Invalid code" });
+    }
     setLoading(false);
   };
 
@@ -94,7 +103,9 @@ function TwoFactorSetup() {
       setStatus({ enabled: false });
       setCode("");
       setMsg({ type: "success", text: "2FA disabled" });
-    } catch (e) { setMsg({ type: "error", text: "Invalid code" }); }
+    } catch (e) {
+      setMsg({ type: "error", text: "Invalid code" });
+    }
     setLoading(false);
   };
 
@@ -105,20 +116,40 @@ function TwoFactorSetup() {
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-emerald-400">
           <Check className="w-5 h-5" />
-          <span className="font-semibold">Two-factor authentication is enabled</span>
+          <span className="font-semibold">
+            Two-factor authentication is enabled
+          </span>
         </div>
         <div>
           <Label>Enter code to disable</Label>
           <div className="flex gap-2">
-            <Input value={code} onChange={e => setCode(e.target.value.replace(/D/g, ""))} maxLength={6} placeholder="000000" className="w-32 text-center text-lg tracking-widest" />
-            <Button onClick={handleDisable} disabled={code.length !== 6 || loading} variant="outline" className="text-red-400">Disable 2FA</Button>
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\\D/g, ""))}
+              maxLength={6}
+              placeholder="000000"
+              className="w-32 text-center text-lg tracking-widest"
+            />
+            <Button
+              onClick={handleDisable}
+              disabled={code.length !== 6 || loading}
+              variant="outline"
+              className="text-red-400"
+            >
+              Disable 2FA
+            </Button>
           </div>
         </div>
-        {msg && <div className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}>{msg.text}</div>}
+        {msg && (
+          <div
+            className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}
+          >
+            {msg.text}
+          </div>
+        )}
       </div>
     );
   }
-
 
   return (
     <div className="space-y-4">
@@ -131,17 +162,37 @@ function TwoFactorSetup() {
           <div className="bg-white p-4 rounded-lg inline-block">
             <img src={qrCode} alt="QR Code" className="w-48 h-48" />
           </div>
-          <p className="text-sm text-zinc-400">Scan this QR code with Google Authenticator or Microsoft Authenticator</p>
+          <p className="text-sm text-zinc-400">
+            Scan this QR code with Google Authenticator or Microsoft
+            Authenticator
+          </p>
           <div>
             <Label>Enter 6-digit code to confirm</Label>
             <div className="flex gap-2">
-              <Input value={code} onChange={e => setCode(e.target.value.replace(/D/g, ""))} maxLength={6} placeholder="000000" className="w-32 text-center text-lg tracking-widest" />
-              <Button onClick={handleEnable} disabled={code.length !== 6 || loading}>Enable 2FA</Button>
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\\D/g, ""))}
+                maxLength={6}
+                placeholder="000000"
+                className="w-32 text-center text-lg tracking-widest"
+              />
+              <Button
+                onClick={handleEnable}
+                disabled={code.length !== 6 || loading}
+              >
+                Enable 2FA
+              </Button>
             </div>
           </div>
         </>
       )}
-      {msg && <div className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}>{msg.text}</div>}
+      {msg && (
+        <div
+          className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}
+        >
+          {msg.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -884,7 +935,6 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          
           {/* White Label Branding */}
           <Card>
             <CardHeader>
@@ -892,34 +942,105 @@ export function SettingsPage() {
                 <Palette className="w-5 h-5" /> White Label Branding
               </CardTitle>
               <CardDescription>
-                Customize the platform colors and branding to match your ISP identity.
+                Customize the platform colors and branding to match your ISP
+                identity.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="branding-title">Platform Title</Label>
-                  <Input id="branding-title" value={settings.branding_title} onChange={(e) => setSettings({ ...settings, branding_title: e.target.value })} placeholder="MyISP Billing" />
-                  <p className="text-xs text-zinc-500 mt-1">Overrides company name in sidebar and titles</p>
+                  <Input
+                    id="branding-title"
+                    value={settings.branding_title}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        branding_title: e.target.value,
+                      })
+                    }
+                    placeholder="MyISP Billing"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Overrides company name in sidebar and titles
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="primary-color">Primary Color</Label>
                   <div className="flex gap-2">
-                    <Input id="primary-color" type="color" value={settings.primary_color} onChange={(e) => setSettings({ ...settings, primary_color: e.target.value })} className="w-12 h-10 p-1 cursor-pointer" />
-                    <Input value={settings.primary_color} onChange={(e) => setSettings({ ...settings, primary_color: e.target.value })} placeholder="#3b82f6" className="flex-1 font-mono text-sm" />
+                    <Input
+                      id="primary-color"
+                      type="color"
+                      value={settings.primary_color}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          primary_color: e.target.value,
+                        })
+                      }
+                      className="w-12 h-10 p-1 cursor-pointer"
+                    />
+                    <Input
+                      value={settings.primary_color}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          primary_color: e.target.value,
+                        })
+                      }
+                      placeholder="#3b82f6"
+                      className="flex-1 font-mono text-sm"
+                    />
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Used for buttons, sidebar icon, active links</p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Used for buttons, sidebar icon, active links
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="secondary-color">Secondary Color</Label>
                   <div className="flex gap-2">
-                    <Input id="secondary-color" type="color" value={settings.secondary_color} onChange={(e) => setSettings({ ...settings, secondary_color: e.target.value })} className="w-12 h-10 p-1 cursor-pointer" />
-                    <Input value={settings.secondary_color} onChange={(e) => setSettings({ ...settings, secondary_color: e.target.value })} placeholder="#1e293b" className="flex-1 font-mono text-sm" />
+                    <Input
+                      id="secondary-color"
+                      type="color"
+                      value={settings.secondary_color}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          secondary_color: e.target.value,
+                        })
+                      }
+                      className="w-12 h-10 p-1 cursor-pointer"
+                    />
+                    <Input
+                      value={settings.secondary_color}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          secondary_color: e.target.value,
+                        })
+                      }
+                      placeholder="#1e293b"
+                      className="flex-1 font-mono text-sm"
+                    />
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Used for sidebar and card backgrounds</p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Used for sidebar and card backgrounds
+                  </p>
                 </div>
                 <div className="flex items-end">
-                  <Button type="button" variant="outline" onClick={() => setSettings({ ...settings, primary_color: '#3b82f6', secondary_color: '#1e293b', branding_title: '' })} className="text-xs">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        primary_color: "#3b82f6",
+                        secondary_color: "#1e293b",
+                        branding_title: "",
+                      })
+                    }
+                    className="text-xs"
+                  >
                     <RotateCcw className="w-3 h-3 mr-1" /> Reset to Defaults
                   </Button>
                 </div>
@@ -927,7 +1048,7 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-{/* Portal Links */}
+          {/* Portal Links */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1844,7 +1965,6 @@ export function SettingsPage() {
         </div>
       )}
 
-
       {/* Security Settings */}
       {activeTab === "security" && (
         <Card>
@@ -1853,7 +1973,8 @@ export function SettingsPage() {
               <Shield className="w-5 h-5" /> Two-Factor Authentication
             </CardTitle>
             <CardDescription>
-              Add an extra layer of security to your account using an authenticator app.
+              Add an extra layer of security to your account using an
+              authenticator app.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -2022,6 +2143,7 @@ export function SettingsPage() {
         activeTab !== "payment-gateways" &&
         activeTab !== "bank-paybills" &&
         activeTab !== "wireguard" &&
+        activeTab !== "security" &&
         activeTab !== "notifications" && (
           <div className="glass rounded-2xl p-12 text-center">
             <div className="text-zinc-500">
