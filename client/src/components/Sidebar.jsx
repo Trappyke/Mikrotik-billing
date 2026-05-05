@@ -93,6 +93,12 @@ const navItems = [
     feature: "integrations",
   },
   {
+  {
+    to: "/tenant-branding",
+    icon: Palette,
+    label: "Tenant Branding",
+    feature: "settings",
+  },
     to: "/settings",
     icon: SettingsIcon,
     label: "Settings",
