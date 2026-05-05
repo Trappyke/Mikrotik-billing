@@ -140,7 +140,6 @@ export default function LoginPage() {
         background: `radial-gradient(ellipse at 50% 0%, ${secondary} 0%, #0f1117 50%, #0a0a0f 100%)`,
       }}
     >
-      {/* Background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
           className="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-[120px]"
@@ -153,45 +152,41 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-[440px] relative z-10">
-        {/* ─── LOGO & BRANDING ─── */}
-        <div className="text-center mb-8">
-          {/* Logo */}
-          <div className="mb-6">
+        {/* LOGO & BRANDING */}
+        <div className="text-center mb-10">
+          <div className="mb-8">
             {branding.logo_url ? (
-              <img
-                src={branding.logo_url}
-                alt={branding.company_name}
-                className="h-20 w-auto max-w-[280px] object-contain mx-auto"
-              />
+              <div className="inline-block p-5 rounded-3xl bg-white/[0.03] backdrop-blur-sm border border-white/[0.06]">
+                <img
+                  src={branding.logo_url}
+                  alt={branding.company_name}
+                  className="h-32 w-auto max-w-[340px] object-contain mx-auto"
+                />
+              </div>
             ) : (
               <div
-                className="w-24 h-24 rounded-3xl flex items-center justify-center mx-auto shadow-2xl"
+                className="w-32 h-32 rounded-3xl flex items-center justify-center mx-auto shadow-2xl"
                 style={{
                   background: `linear-gradient(135deg, ${primary}, ${accent})`,
-                  boxShadow: `0 0 60px ${primary}40, 0 20px 40px ${primary}20`,
+                  boxShadow: `0 0 80px ${primary}40, 0 30px 60px ${primary}20`,
                 }}
               >
-                <Shield className="w-12 h-12 text-white" />
+                <Shield className="w-16 h-16 text-white" />
               </div>
             )}
           </div>
-
-          {/* Company Name */}
-          <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">
+          <h1 className="text-4xl font-extrabold text-white mb-3 tracking-tight">
             {branding.company_name}
           </h1>
-
-          {/* Subtitle */}
           <p className="text-zinc-400 text-sm">
             Sign in to manage your network
           </p>
         </div>
 
-        {/* ─── FORM CARD ─── */}
+        {/* FORM */}
         <div className="bg-zinc-900/80 backdrop-blur-xl rounded-2xl p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
           {step === "password" && (
             <div className="space-y-5">
-              {/* Google Sign-In */}
               <button
                 type="button"
                 onClick={handleGoogleLogin}
@@ -217,7 +212,6 @@ export default function LoginPage() {
                 </svg>
                 Sign in with Google
               </button>
-
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-zinc-800" />
@@ -228,7 +222,6 @@ export default function LoginPage() {
                   </span>
                 </div>
               </div>
-
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
@@ -290,7 +283,6 @@ export default function LoginPage() {
               </form>
             </div>
           )}
-
           {step === "2fa" && (
             <div className="space-y-5">
               <div className="text-center">
@@ -342,8 +334,6 @@ export default function LoginPage() {
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <p className="text-center text-zinc-600 text-xs mt-8">
           {branding.is_default
             ? "Secure ISP Management Platform"
