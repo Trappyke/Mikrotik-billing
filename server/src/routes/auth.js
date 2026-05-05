@@ -319,10 +319,13 @@ router.post("/2fa/enable", authenticate, async (req, res) => {
       [req.user.id],
     );
     const secret = result.rows[0]?.two_factor_secret;
+    console.log("[2FA ENABLE] Secret from DB:", secret ? secret.substring(0,10)+"..." : "MISSING");
+    console.log("[2FA ENABLE] Code received:", code);
 
     if (!secret) return res.status(400).json({ error: "Setup 2FA first" });
 
     const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code, window: 2 });
+    console.log("[2FA ENABLE] Verify result:", isValid);
     if (!isValid) return res.status(400).json({ error: "Invalid code" });
 
     await db.query("UPDATE users SET two_factor_enabled = true WHERE id = $1", [
