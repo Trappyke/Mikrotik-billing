@@ -414,7 +414,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-zinc-800/50 space-y-3">
+      <div className="p-3 border-t border-zinc-800/50 space-y-2 overflow-y-auto flex-shrink-0 max-h-[40vh]">
         {/* Settings section - admin only */}
         {user?.role === "admin" && (
           <>
