@@ -125,6 +125,7 @@ router.post("/login", authLimiter, async (req, res) => {
       const isValid = speakeasy.totp.verify({ encoding: "base32",
         token: two_factor_code,
         secret: user.rows[0].two_factor_secret,
+        window: 2,
       });
 
       if (!isValid) {
@@ -321,7 +322,7 @@ router.post("/2fa/enable", authenticate, async (req, res) => {
 
     if (!secret) return res.status(400).json({ error: "Setup 2FA first" });
 
-    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code });
+    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code, window: 2 });
     if (!isValid) return res.status(400).json({ error: "Invalid code" });
 
     await db.query("UPDATE users SET two_factor_enabled = true WHERE id = $1", [
@@ -345,7 +346,7 @@ router.post("/2fa/disable", authenticate, async (req, res) => {
     );
     const secret = result.rows[0]?.two_factor_secret;
 
-    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code });
+    const isValid = speakeasy.totp.verify({ secret, encoding: "base32", token: code, window: 2 });
     if (!isValid) return res.status(400).json({ error: "Invalid code" });
 
     await db.query(
