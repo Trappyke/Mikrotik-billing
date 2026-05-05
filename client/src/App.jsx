@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Menu } from "lucide-react";
 import axios from "axios";
 import { Sidebar } from "./components/Sidebar";
+import { MobileNav } from "./components/MobileNav";
 import { Toast } from "./components/Toast";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GlobalSearch } from "./components/GlobalSearch";
@@ -166,7 +167,8 @@ function App() {
                 </div>
 
                 {/* Main content */}
-                <main className="flex-1 overflow-auto">
+                <MobileNav onMenuOpen={() => setMobileMenuOpen(true)} />
+                <main className="flex-1 overflow-auto pb-20 lg:pb-0">
                   {/* Mobile header bar */}
                   <div className="lg:hidden flex items-center justify-between p-4 border-b border-zinc-800/50">
                     <button
