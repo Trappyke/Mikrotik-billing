@@ -36,6 +36,7 @@ import { FinancialReports } from "./pages/billing/FinancialReports";
 import { WhatsAppPage } from "./pages/billing/WhatsAppPage";
 import { MapView } from "./pages/billing/MapView";
 import { WalletPage } from "./pages/billing/WalletPage";
+import { MpesaReconcile } from "./pages/MpesaReconcile";
 import { BackupPage } from "./pages/billing/BackupPage";
 import { InventoryPage } from "./pages/billing/InventoryPage";
 import { AnalyticsReports } from "./pages/billing/AnalyticsReports";
@@ -221,6 +222,14 @@ function App() {
                     />
                     <Route path="/billing-map" element={<MapView />} />
                     <Route path="/billing-wallet" element={<WalletPage />} />
+                    <Route
+                      path="/mpesa-reconcile"
+                      element={
+                        <ProtectedRoute feature="mpesa-reconcile">
+                          <MpesaReconcile />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route
                       path="/billing-monitoring"
                       element={<MonitoringDashboard />}

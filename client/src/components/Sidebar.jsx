@@ -133,6 +133,12 @@ const billingItems = [
     feature: "payments",
   },
   { to: "/billing-wallet", icon: Wallet, label: "Wallet", feature: "wallet" },
+  {
+    to: "/mpesa-reconcile",
+    icon: Wallet,
+    label: "M-Pesa Reconcile",
+    feature: "mpesa-reconcile",
+  },
   { to: "/billing-sms", icon: MessageSquare, label: "SMS", feature: "sms" },
   {
     to: "/billing-whatsapp",

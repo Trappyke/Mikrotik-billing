@@ -531,6 +531,7 @@ const startServer = async () => {
       paymentLimiter,
       require("./routes/payments"),
     );
+    app.use("/api/mpesa", authenticate, require("./routes/mpesaReconcile"));
     app.use(
       "/api/sms",
       authenticate,
