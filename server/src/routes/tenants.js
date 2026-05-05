@@ -1,17 +1,42 @@
 /**
  * Tenant Management Routes
  * Super admin only: create, update, delete tenants
- * Tenant admin: view own tenant, update branding
+ * Tenant admin: view own tenant, update branding, upload logo
  */
 
 const express = require("express");
 const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
-const { tenantFilter, requireSuperAdmin, DEFAULT_TENANT_ID } = require("../middleware/tenantContext");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const {
+  tenantFilter,
+  requireSuperAdmin,
+  DEFAULT_TENANT_ID,
+} = require("../middleware/tenantContext");
 
 function getDb() {
   return global.dbAvailable ? global.db : require("../db/memory");
 }
+
+// Logo upload config
+const logosDir = path.join(__dirname, "..", "public", "logos");
+if (!fs.existsSync(logosDir)) fs.mkdirSync(logosDir, { recursive: true });
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: logosDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".png";
+      cb(null, `tenant-${req.params.id}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
 
 // ─── Super Admin: List all tenants ───
 router.get("/", requireSuperAdmin, async (req, res) => {
@@ -35,7 +60,9 @@ router.get("/current", async (req, res) => {
   try {
     const db = getDb();
     const tenantId = req.tenantId || req.user?.tenant_id || DEFAULT_TENANT_ID;
-    const result = await db.query("SELECT * FROM tenants WHERE id = $1", [tenantId]);
+    const result = await db.query("SELECT * FROM tenants WHERE id = $1", [
+      tenantId,
+    ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Tenant not found" });
     }
@@ -49,25 +76,67 @@ router.get("/current", async (req, res) => {
 router.post("/", requireSuperAdmin, async (req, res) => {
   try {
     const db = getDb();
-    const { name, slug, company_name, email, phone, address, domain, max_customers, max_routers } = req.body;
-
+    const {
+      name,
+      slug,
+      company_name,
+      email,
+      phone,
+      address,
+      domain,
+      max_customers,
+      max_routers,
+    } = req.body;
     if (!name || !slug) {
       return res.status(400).json({ error: "name and slug are required" });
     }
 
-    // Check slug uniqueness
-    const existing = await db.query("SELECT id FROM tenants WHERE slug = $1", [slug]);
+    const existing = await db.query("SELECT id FROM tenants WHERE slug = $1", [
+      slug,
+    ]);
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: "A tenant with this slug already exists" });
+      return res
+        .status(409)
+        .json({ error: "A tenant with this slug already exists" });
     }
 
     const id = uuidv4();
     const result = await db.query(
       `INSERT INTO tenants (id, name, slug, company_name, email, phone, address, domain, max_customers, max_routers)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [id, name, slug, company_name || name, email, phone, address, domain, max_customers || 0, max_routers || 0],
+      [
+        id,
+        name,
+        slug,
+        company_name || name,
+        email,
+        phone,
+        address,
+        domain,
+        max_customers || 0,
+        max_routers || 0,
+      ],
     );
     res.status(201).json(result.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Upload logo ───
+router.post("/:id/logo", logoUpload.single("logo"), async (req, res) => {
+  try {
+    if (!req.file)
+      return res
+        .status(400)
+        .json({ error: "No logo file uploaded. Use form field: logo" });
+    const db = getDb();
+    const logoUrl = `/logos/${req.file.filename}`;
+    await db.query(
+      "UPDATE tenants SET logo_url = $1, updated_at = NOW() WHERE id = $2",
+      [logoUrl, req.params.id],
+    );
+    res.json({ logo_url: logoUrl, message: "Logo uploaded successfully" });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -77,17 +146,33 @@ router.post("/", requireSuperAdmin, async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const db = getDb();
-
-    // Check authorization: super admin or tenant's own admin
     const isSuperAdmin = req.user?.role === "admin" && !req.user?.tenant_id;
     const isOwnTenant = req.user?.tenant_id === req.params.id;
     if (!isSuperAdmin && !isOwnTenant) {
-      return res.status(403).json({ error: "You can only edit your own tenant" });
+      return res
+        .status(403)
+        .json({ error: "You can only edit your own tenant" });
     }
 
-    const { name, company_name, email, phone, address, logo_url, primary_color, secondary_color, accent_color, domain, is_active, max_customers, max_routers } = req.body;
+    const {
+      name,
+      company_name,
+      email,
+      phone,
+      address,
+      logo_url,
+      primary_color,
+      secondary_color,
+      accent_color,
+      domain,
+      is_active,
+      max_customers,
+      max_routers,
+    } = req.body;
 
-    const existing = await db.query("SELECT * FROM tenants WHERE id = $1", [req.params.id]);
+    const existing = await db.query("SELECT * FROM tenants WHERE id = $1", [
+      req.params.id,
+    ]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: "Tenant not found" });
     }
@@ -109,7 +194,22 @@ router.put("/:id", async (req, res) => {
         max_routers = COALESCE($13, max_routers),
         updated_at = NOW()
        WHERE id = $14 RETURNING *`,
-      [name, company_name, email, phone, address, logo_url, primary_color, secondary_color, accent_color, domain, is_active, max_customers, max_routers, req.params.id],
+      [
+        name,
+        company_name,
+        email,
+        phone,
+        address,
+        logo_url,
+        primary_color,
+        secondary_color,
+        accent_color,
+        domain,
+        is_active,
+        max_customers,
+        max_routers,
+        req.params.id,
+      ],
     );
     res.json(result.rows[0]);
   } catch (e) {
@@ -122,7 +222,9 @@ router.delete("/:id", requireSuperAdmin, async (req, res) => {
   try {
     const db = getDb();
     if (req.params.id === DEFAULT_TENANT_ID) {
-      return res.status(400).json({ error: "Cannot delete the default tenant" });
+      return res
+        .status(400)
+        .json({ error: "Cannot delete the default tenant" });
     }
     await db.query("DELETE FROM tenants WHERE id = $1", [req.params.id]);
     res.json({ success: true });

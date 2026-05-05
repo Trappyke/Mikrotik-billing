@@ -410,6 +410,7 @@ const startServer = async () => {
       fs.mkdirSync(portalsDir, { recursive: true });
     }
     app.use("/portals", express.static(portalsDir));
+    app.use("/logos", express.static(path.join(__dirname, "public", "logos")));
     logger.info("Serving captive portals from", { path: portalsDir });
 
     // Tenant context middleware (resolves tenant_id from user)
