@@ -257,6 +257,7 @@ const startServer = async () => {
       const { runMigrations } = require("./db/migrate");
       await runMigrations();
       logger.info("Database migrations done");
+      db.query("SELECT 1").then(() => logger.info("DB pool warmed")).catch(() => {});
       // Run webhook migration
       require("./db/webhookMigrations")
         .run()

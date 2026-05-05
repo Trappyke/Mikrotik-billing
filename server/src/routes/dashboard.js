@@ -1,11 +1,15 @@
 /**
  * Dashboard Stats API
  * Returns real-time statistics for the main dashboard
- * Optimized: all independent queries run in parallel via Promise.all
+ * Cached for 10 seconds to eliminate repeated DB round-trips
  */
 
 const express = require("express");
 const router = express.Router();
+
+// Simple in-memory cache with TTL
+const cache = { stats: null, ts: 0 };
+const CACHE_TTL = 10000; // 10 seconds
 
 function getDb() {
   return global.db || require("../db/memory");
@@ -13,11 +17,21 @@ function getDb() {
 
 // ─── GET DASHBOARD STATS ───
 router.get("/stats", async (req, res) => {
+  // Return cached data if fresh
+  if (cache.stats && Date.now() - cache.ts < CACHE_TTL) {
+    return res.json({
+      success: true,
+      timestamp: cache.stats.timestamp,
+      stats: cache.stats,
+      cached: true,
+    });
+  }
+
   try {
     const db = getDb();
     const stats = {};
 
-    // Run ALL independent queries in parallel (single round-trip overhead)
+    // Run ALL independent queries in parallel
     const [
       projectsResult,
       templatesResult,
@@ -81,10 +95,10 @@ router.get("/stats", async (req, res) => {
         "SELECT COUNT(*) as count FROM subscriptions WHERE status = 'active'",
       ),
       db.query(
-        `SELECT p.name, p.price, COUNT(s.id) as customer_count FROM service_plans p LEFT JOIN subscriptions s ON p.id = s.plan_id AND s.status = 'active' GROUP BY p.id, p.name, p.price ORDER BY customer_count DESC LIMIT 5`,
+        "SELECT p.name, p.price, COUNT(s.id) as customer_count FROM service_plans p LEFT JOIN subscriptions s ON p.id = s.plan_id AND s.status = 'active' GROUP BY p.id, p.name, p.price ORDER BY customer_count DESC LIMIT 5",
       ),
       db.query(
-        `SELECT DATE(created_at) as date, SUM(amount) as total FROM invoices WHERE status = 'paid' AND created_at >= NOW() - INTERVAL '7 days' GROUP BY DATE(created_at) ORDER BY date DESC`,
+        "SELECT DATE(created_at) as date, SUM(amount) as total FROM invoices WHERE status = 'paid' AND created_at >= NOW() - INTERVAL '7 days' GROUP BY DATE(created_at) ORDER BY date DESC",
       ),
     ]);
 
@@ -113,98 +127,104 @@ router.get("/stats", async (req, res) => {
     stats.monthRevenue = val(monthResult, "total");
     stats.lastMonthRevenue = val(lastMonthResult, "total");
 
-    // Revenue change %
-    if (stats.lastMonthRevenue > 0) {
-      stats.revenueChange = parseFloat(
-        (
-          ((stats.monthRevenue - stats.lastMonthRevenue) /
-            stats.lastMonthRevenue) *
-          100
-        ).toFixed(1),
-      );
-    } else {
-      stats.revenueChange = stats.monthRevenue > 0 ? 100 : 0;
-    }
+    stats.revenueChange =
+      stats.lastMonthRevenue > 0
+        ? parseFloat(
+            (
+              ((stats.monthRevenue - stats.lastMonthRevenue) /
+                stats.lastMonthRevenue) *
+              100
+            ).toFixed(1),
+          )
+        : stats.monthRevenue > 0
+          ? 100
+          : 0;
 
     stats.outstandingBalance = val(outstandingResult, "total");
     stats.overdueInvoices = val(overdueResult);
     stats.activeSubscriptions = val(activeSubsResult);
+    stats.topPlans =
+      topPlansResult.status === "fulfilled" ? topPlansResult.value.rows : [];
+    stats.revenueByDay =
+      revenueByDayResult.status === "fulfilled"
+        ? revenueByDayResult.value.rows
+        : [];
+    stats.timestamp = new Date().toISOString();
 
-    if (topPlansResult.status === "fulfilled") {
-      stats.topPlans = topPlansResult.value.rows;
-    } else {
-      stats.topPlans = [];
-    }
-
-    if (revenueByDayResult.status === "fulfilled") {
-      stats.revenueByDay = revenueByDayResult.value.rows;
-    } else {
-      stats.revenueByDay = [];
-    }
+    // Cache for 10 seconds
+    cache.stats = stats;
+    cache.ts = Date.now();
 
     res.json({
       success: true,
-      timestamp: new Date().toISOString(),
+      timestamp: stats.timestamp,
       stats,
+      cached: false,
     });
   } catch (error) {
     console.error("Dashboard stats error:", error);
+    // Return stale cache if available
+    if (cache.stats) {
+      return res.json({
+        success: true,
+        timestamp: cache.stats.timestamp,
+        stats: cache.stats,
+        cached: true,
+        stale: true,
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ─── GET QUICK ACTIONS ───
 router.get("/quick-actions", async (req, res) => {
-  try {
-    const user = req.user;
-    const actions = [
+  const user = req.user;
+  const actions = [
+    {
+      id: "new-project",
+      label: "New Project",
+      icon: "FolderPlus",
+      route: "/?action=create-project",
+      color: "blue",
+    },
+    {
+      id: "new-customer",
+      label: "Add Customer",
+      icon: "UserPlus",
+      route: "/billing-customers?action=add",
+      color: "emerald",
+    },
+  ];
+
+  if (user?.role === "admin") {
+    actions.push(
       {
-        id: "new-project",
-        label: "New Project",
-        icon: "FolderPlus",
-        route: "/?action=create-project",
-        color: "blue",
+        id: "integrations",
+        label: "Integrations",
+        icon: "Key",
+        route: "/integrations",
+        color: "violet",
       },
       {
-        id: "new-customer",
-        label: "Add Customer",
-        icon: "UserPlus",
-        route: "/billing-customers?action=add",
-        color: "emerald",
+        id: "users",
+        label: "Manage Users",
+        icon: "Users",
+        route: "/users",
+        color: "orange",
       },
-    ];
-
-    if (user?.role === "admin") {
-      actions.push(
-        {
-          id: "integrations",
-          label: "Integrations",
-          icon: "Key",
-          route: "/integrations",
-          color: "violet",
-        },
-        {
-          id: "users",
-          label: "Manage Users",
-          icon: "Users",
-          route: "/users",
-          color: "orange",
-        },
-      );
-    }
-
-    actions.push({
-      id: "templates",
-      label: "Browse Templates",
-      icon: "FileCode",
-      route: "/templates",
-      color: "cyan",
-    });
-
-    res.json({ success: true, actions });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    );
   }
+
+  actions.push({
+    id: "templates",
+    label: "Browse Templates",
+    icon: "FileCode",
+    route: "/templates",
+    color: "cyan",
+  });
+
+  res.json({ success: true, actions });
 });
 
 module.exports = router;
