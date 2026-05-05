@@ -39,6 +39,7 @@ import { WalletPage } from "./pages/billing/WalletPage";
 import MergeCustomers from "./pages/MergeCustomers";
 import { MpesaReconcile } from "./pages/MpesaReconcile";
 import { BackupPage } from "./pages/billing/BackupPage";
+import CreditNotes from "./pages/billing/CreditNotes";
 import { InventoryPage } from "./pages/billing/InventoryPage";
 import { AnalyticsReports } from "./pages/billing/AnalyticsReports";
 import { PPPoEManagement } from "./pages/billing/PPPoEManagement";
@@ -257,6 +258,7 @@ function App() {
                       element={<FinancialReports />}
                     />
                     <Route path="/billing-backup" element={<BackupPage />} />
+                    <Route path="/credit-notes" element={<CreditNotes />} />
                     <Route path="/inventory" element={<InventoryPage />} />
                     <Route path="/analytics" element={<AnalyticsReports />} />
                     <Route path="/pppoe" element={<PPPoEManagement />} />
