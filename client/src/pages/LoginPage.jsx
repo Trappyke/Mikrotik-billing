@@ -326,17 +326,6 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <p className="text-sm text-blue-300 mb-2 font-medium">
-              Demo Credentials:
-            </p>
-            <p className="text-xs text-gray-400 font-mono">
-              Email: admin@example.com
-              <br />
-              Password: admin123
-            </p>
-          </div>
         </div>
 
         {/* Footer */}
