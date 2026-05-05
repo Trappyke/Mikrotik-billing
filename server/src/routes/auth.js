@@ -46,10 +46,11 @@ router.post("/register", authLimiter, async (req, res) => {
       return res.status(409).json({ error: "Email already exists" });
 
     const hash = await bcrypt.hash(password, 10);
+    const tid = req.body.tenant_id || null;
     const result = await db.query(
-      `INSERT INTO users (id, email, password_hash, name, role) VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, email, name, role, created_at`,
-      [uuidv4(), email, hash, name, userRole],
+      `INSERT INTO users (id, email, password_hash, name, role, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email, name, role, tenant_id, created_at`,
+      [uuidv4(), email, hash, name, userRole, tid],
     );
 
     const token = jwt.sign(
@@ -57,6 +58,7 @@ router.post("/register", authLimiter, async (req, res) => {
         id: result.rows[0].id,
         email: result.rows[0].email,
         role: result.rows[0].role,
+        tenant_id: result.rows[0].tenant_id,
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES },
@@ -143,6 +145,7 @@ router.post("/login", authLimiter, async (req, res) => {
         id: user.rows[0].id,
         email: user.rows[0].email,
         role: user.rows[0].role,
+        tenant_id: user.rows[0].tenant_id,
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES },

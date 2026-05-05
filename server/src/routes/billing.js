@@ -1,5 +1,24 @@
 const express = require("express");
 const router = express.Router();
+
+// Multi-tenant: auto-inject tenant_id on all write operations
+router.use((req, res, next) => {
+  if (req.tenantId && !req.isSuperAdmin) {
+    if (
+      (req.method === "POST" || req.method === "PUT") &&
+      req.body &&
+      typeof req.body === "object" &&
+      !req.body.tenant_id
+    ) {
+      req.body.tenant_id = req.tenantId;
+    }
+    if (req.method === "GET" && !req.query.tenant_id) {
+      req.query.tenant_id = req.tenantId;
+    }
+  }
+  next();
+});
+
 const billing = require("../services/billingData");
 const PPPoEProvisioner = require("../utils/pppoeProvisioner");
 const { triggerSMS } = require("./sms");

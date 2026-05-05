@@ -412,6 +412,10 @@ const startServer = async () => {
     app.use("/portals", express.static(portalsDir));
     logger.info("Serving captive portals from", { path: portalsDir });
 
+    // Tenant context middleware (resolves tenant_id from user)
+    const { tenantContext } = require("./middleware/tenantContext");
+    app.use("/api", tenantContext);
+
     // Protected routes (require authentication)
     // Each route has auth middleware applied individually
     const {
@@ -591,6 +595,9 @@ const startServer = async () => {
 
     // Audit Log routes
     app.use("/api/audit", authenticate, require("./routes/audit"));
+
+    // Tenant management routes
+    app.use("/api/tenants", authenticate, require("./routes/tenants"));
 
     // Captive Portal routes
     app.use(

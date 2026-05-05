@@ -4,6 +4,7 @@ const { runBillingMigrations } = require("./billingMigrations");
 const { runIntegrationsMigration } = require("./integrationsMigration");
 const provisioningMigrations = require("./provisionMigrations");
 const unifiedMigrations = require("./unifiedMigrations");
+const tenantMigrations = require("./tenantMigrations");
 
 const coreMigrations = [
   // Users table (MUST be first - required for auth)
@@ -401,6 +402,19 @@ async function runMigrations() {
       }
     }
     console.log("Unified migrations completed");
+
+    // Run tenant migrations (multi-tenancy)
+    for (const migration of tenantMigrations) {
+      try {
+        await db.query(migration);
+      } catch (error) {
+        console.error(
+          "Tenant migration failed (continuing anyway):",
+          error.message,
+        );
+      }
+    }
+    console.log("Tenant migrations completed");
 
     console.log("All migrations completed successfully");
   } catch (error) {
