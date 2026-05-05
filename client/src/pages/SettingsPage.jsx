@@ -51,6 +51,101 @@ import { useToastStore } from "../stores/toastStore";
 
 const API = import.meta.env.VITE_API_URL || "/api";
 
+
+function TwoFactorSetup() {
+  const [status, setStatus] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API}/auth/2fa/status`).then(r => setStatus(r.data)).catch(() => {});
+  }, []);
+
+  const handleSetup = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.post(`${API}/auth/2fa/setup`);
+      setQrCode(data.qrCode);
+      setMsg({ type: "info", text: "Scan this QR code with Google Authenticator" });
+    } catch (e) { setMsg({ type: "error", text: "Setup failed" }); }
+    setLoading(false);
+  };
+
+  const handleEnable = async () => {
+    if (code.length !== 6) return;
+    setLoading(true);
+    try {
+      await axios.post(`${API}/auth/2fa/enable`, { code });
+      setStatus({ enabled: true });
+      setQrCode(null);
+      setCode("");
+      setMsg({ type: "success", text: "2FA enabled successfully!" });
+    } catch (e) { setMsg({ type: "error", text: "Invalid code" }); }
+    setLoading(false);
+  };
+
+  const handleDisable = async () => {
+    if (code.length !== 6) return;
+    setLoading(true);
+    try {
+      await axios.post(`${API}/auth/2fa/disable`, { code });
+      setStatus({ enabled: false });
+      setCode("");
+      setMsg({ type: "success", text: "2FA disabled" });
+    } catch (e) { setMsg({ type: "error", text: "Invalid code" }); }
+    setLoading(false);
+  };
+
+  if (!status) return <div className="text-zinc-500 text-sm">Loading...</div>;
+
+  if (status.enabled) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-emerald-400">
+          <Check className="w-5 h-5" />
+          <span className="font-semibold">Two-factor authentication is enabled</span>
+        </div>
+        <div>
+          <Label>Enter code to disable</Label>
+          <div className="flex gap-2">
+            <Input value={code} onChange={e => setCode(e.target.value.replace(/D/g, ""))} maxLength={6} placeholder="000000" className="w-32 text-center text-lg tracking-widest" />
+            <Button onClick={handleDisable} disabled={code.length !== 6 || loading} variant="outline" className="text-red-400">Disable 2FA</Button>
+          </div>
+        </div>
+        {msg && <div className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}>{msg.text}</div>}
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="space-y-4">
+      {!qrCode ? (
+        <Button onClick={handleSetup} disabled={loading} className="gap-2">
+          <Shield className="w-4 h-4" /> Setup Two-Factor Authentication
+        </Button>
+      ) : (
+        <>
+          <div className="bg-white p-4 rounded-lg inline-block">
+            <img src={qrCode} alt="QR Code" className="w-48 h-48" />
+          </div>
+          <p className="text-sm text-zinc-400">Scan this QR code with Google Authenticator or Microsoft Authenticator</p>
+          <div>
+            <Label>Enter 6-digit code to confirm</Label>
+            <div className="flex gap-2">
+              <Input value={code} onChange={e => setCode(e.target.value.replace(/D/g, ""))} maxLength={6} placeholder="000000" className="w-32 text-center text-lg tracking-widest" />
+              <Button onClick={handleEnable} disabled={code.length !== 6 || loading}>Enable 2FA</Button>
+            </div>
+          </div>
+        </>
+      )}
+      {msg && <div className={`text-sm ${msg.type === "success" ? "text-emerald-400" : msg.type === "error" ? "text-red-400" : "text-blue-400"}`}>{msg.text}</div>}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { theme, setTheme, mode, setMode, themes } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
@@ -1748,6 +1843,23 @@ export function SettingsPage() {
         </div>
       )}
 
+
+      {/* Security Settings */}
+      {activeTab === "security" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" /> Two-Factor Authentication
+            </CardTitle>
+            <CardDescription>
+              Add an extra layer of security to your account using an authenticator app.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <TwoFactorSetup />
+          </CardContent>
+        </Card>
+      )}
       {/* Notifications Settings */}
       {activeTab === "notifications" && (
         <div className="space-y-6">
