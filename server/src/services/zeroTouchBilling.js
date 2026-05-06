@@ -120,11 +120,11 @@ async function ensureMikrotikConnection(routerId, overrides = {}) {
     };
   }
   if (!fields.username || !fields.password_encrypted) {
-    return {
-      success: false,
-      status: "skipped",
-      error: "Management credentials are missing on this zero-touch router",
-    };
+    fields.username = fields.username || "admin";
+    if (!fields.password_encrypted) {
+      console.warn("[ZTP Billing] No mgmt password for router " + routerId + " — using empty password. Set mgmt_username/mgmt_password on the discovered router.");
+      fields.password_encrypted = encryptForMikrotik("");
+    }
   }
 
   const db = getDb();
