@@ -268,9 +268,8 @@ router.get("/provision/callback/:token", async (req, res) => {
       ],
     );
 
-    res
+    res.type("text/plain")
       .send(`# OK: Router marked as provisioned`);
-      .send(`# OK: Router marked as provisioned\n# ${activationStatus}`);
   } catch (error) {
     logger.error("Callback error:", {
       error: error.message,
