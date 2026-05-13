@@ -1,4 +1,3 @@
-
 # Complete Docker Compose for Dokploy Deployment
 # Includes both PostgreSQL database and application server
 # Self-contained - no external database service required
@@ -9,9 +8,9 @@ services:
     image: postgres:15-alpine
     container_name: mikrotik-db
     environment:
-      - POSTGRES_DB=${DB_NAME:-mikrotik_config_builder}
+      - POSTGRES_DB=mikrotik_config_builder
       - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -45,9 +44,9 @@ services:
       # ─── Database ──────────────────────────────────────────────
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-mikrotik_config_builder}
+      - DB_NAME=mikrotik_config_builder
       - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
       # ─── Security (REQUIRED) ───────────────────────────────────
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -89,7 +88,7 @@ services:
       - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
       - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-}
     ports:
-      - "3000:80"
+      - "80:80"
     depends_on:
       postgres:
         condition: service_healthy
