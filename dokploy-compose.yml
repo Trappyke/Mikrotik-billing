@@ -1,12 +1,11 @@
-# Docker Compose for Dokploy (uses Traefik for routing + SSL)
 services:
   postgres:
     image: postgres:15-alpine
     container_name: mikrotik-db
     environment:
-      - POSTGRES_DB=mikrotik_config_builder
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      POSTGRES_DB: mikrotik_config_builder
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -24,18 +23,20 @@ services:
       dockerfile: Dockerfile.dokploy
     container_name: mikrotik-app
     environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=mikrotik_config_builder
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-admin123}
-      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mikrotik_config_builder
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@example.com}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-admin123}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+    expose:
+      - "80"
     depends_on:
       postgres:
         condition: service_healthy
