@@ -1,15 +1,25 @@
 /**
  * Integrations Table Migration
  * Stores encrypted API keys and configuration for external services
- */
-
-const db = require('./index');
+const db = require("./index");
 
 const integrationsMigration = `
+-- Create integrations table
+CREATE TABLE IF NOT EXISTS integrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_name VARCHAR(100) UNIQUE NOT NULL,
+  display_name VARCHAR(255),
+  category VARCHAR(50) DEFAULT 'sms',
+  config_data JSONB DEFAULT '{}'::jsonb,
+  is_active BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Drop and recreate the constraint to include 'communication' category
 ALTER TABLE integrations DROP CONSTRAINT IF EXISTS valid_category;
 
-ALTER TABLE integrations ADD CONSTRAINT valid_category 
+ALTER TABLE integrations ADD CONSTRAINT valid_category
   CHECK (category IN ('sms', 'payment', 'messaging', 'email', 'storage', 'monitoring', 'communication'));
 
 -- Insert default integration templates
@@ -34,13 +44,13 @@ ON CONFLICT (service_name) DO NOTHING;
 `;
 
 async function runIntegrationsMigration() {
-  console.log('🔧 Running integrations migration...');
+  console.log("🔧 Running integrations migration...");
   try {
     await db.query(integrationsMigration);
-    console.log('✅ Integrations table created');
+    console.log("✅ Integrations table created");
     return true;
   } catch (error) {
-    console.error('❌ Integrations migration error:', error.message);
+    console.error("❌ Integrations migration error:", error.message);
     return false;
   }
 }
