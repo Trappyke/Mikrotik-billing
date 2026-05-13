@@ -1,8 +1,8 @@
 /**
  * Integrations Table Migration
- */
+ * * Stores encrypted API keys and configuration for external services
  * Stores encrypted API keys and configuration for external services
-const db = require("./index");
+ */
 
 const integrationsMigration = `
 -- Create integrations table
