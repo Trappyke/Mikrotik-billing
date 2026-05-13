@@ -1,9 +1,5 @@
-# Complete Docker Compose for Dokploy Deployment
-# Includes both PostgreSQL database and application server
-# Self-contained - no external database service required
-
+# Docker Compose for Dokploy (uses Traefik for routing + SSL)
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: mikrotik-db
@@ -18,134 +14,40 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     restart: unless-stopped
     networks:
       - mikrotik-net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
 
-  # Application Server (Frontend + Backend)
   app:
     build:
       context: .
       dockerfile: Dockerfile.dokploy
     container_name: mikrotik-app
-    env_file:
-      - .env
     environment:
       - NODE_ENV=production
       - PORT=5000
-      # Database Configuration
-      # ─── Database ──────────────────────────────────────────────
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=mikrotik_config_builder
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      # ─── Security (REQUIRED) ───────────────────────────────────
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
-      # ─── App URL & CORS ───────────────────────────────────────
-      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-admin123}
       - CORS_ORIGIN=${CORS_ORIGIN:-}
-      # ─── Monitoring & Errors ──────────────────────────────────
-      - SENTRY_DSN=${SENTRY_DSN:-}
-      - ENABLE_MONITORING_API=${ENABLE_MONITORING_API:-false}
-      - ENABLE_ROUTER_CONNECTIVITY=${ENABLE_ROUTER_CONNECTIVITY:-false}
-      # ─── Payment Integrations (optional) ──────────────────────
-      - MPESA_CONSUMER_KEY=${MPESA_CONSUMER_KEY:-}
-      - MPESA_CONSUMER_SECRET=${MPESA_CONSUMER_SECRET:-}
-      - MPESA_SHORTCODE=${MPESA_SHORTCODE:-174379}
-      - MPESA_PASSKEY=${MPESA_PASSKEY:-}
-      - MPESA_CALLBACK_URL=${MPESA_CALLBACK_URL:-}
-      - MPESA_ENVIRONMENT=${MPESA_ENVIRONMENT:-live}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
-      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID:-}
-      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET:-}
-      - FLUTTERWAVE_PUBLIC_KEY=${FLUTTERWAVE_PUBLIC_KEY:-}
-      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY:-}
-      # ─── Messaging (optional) ─────────────────────────────────
-      - AT_API_KEY=${AT_API_KEY:-}
-      - AT_USERNAME=${AT_USERNAME:-}
-      - AT_SENDER_ID=${AT_SENDER_ID:-MyISP}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-}
-      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN:-}
-      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID:-}
-      # ─── Email (optional) ─────────────────────────────────────
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
-      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-}
-    ports:
-      - "80:80"
     depends_on:
       postgres:
         condition: service_healthy
-    # Production startup: fail fast if the database, migrations, or seed step fail
-    command: >
-      sh -eu -c "
-        echo '=========================================' &&
-        echo 'MikroTik Config Builder - Starting...' &&
-        echo '=========================================' &&
-        echo 'Database: $$DB_HOST:$$DB_PORT' &&
-        echo 'Waiting for database...' &&
-        for i in $(seq 1 120); do
-          if nc -z $$DB_HOST $$DB_PORT 2>/dev/null; then
-            echo 'Database connection successful!' &&
-            break
-          fi
-          if [ $$i -eq 120 ]; then
-            echo 'ERROR: Database not available after 120 attempts' &&
-            exit 1
-          fi
-          echo 'Waiting for database... attempt $$i/120' &&
-          sleep 2
-        done &&
-        echo 'Running database migrations (deployment will stop on failure)...' &&
-        cd /app/server &&
-        node src/db/migrate.js &&
-        echo 'Starting application with supervisor...' &&
-        exec /usr/bin/supervisord -c /etc/supervisor.d/supervisord.ini
-      "
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:80/",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     networks:
       - mikrotik-net
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-        reservations:
-          memory: 256M
+      - dokploy-network
 
 volumes:
   pgdata:
-    driver: local
 
 networks:
   mikrotik-net:
-    driver: bridge
+  dokploy-network:
+    external: true
