@@ -158,8 +158,6 @@ const permissionsStore = {
     "network:read",
     "network:write",
     "monitoring:read",
-    "devices:read",
-    "devices:write",
   ],
   reseller: [
     "customers:read",
@@ -174,11 +172,6 @@ const permissionsStore = {
 const featureAccessStore = {
   admin: [
     "dashboard",
-    "topology",
-    "router-linking",
-    "devices",
-    "templates",
-    "mikrotik-api",
     "integrations",
     "settings",
     "billing",
@@ -214,8 +207,6 @@ const featureAccessStore = {
   ],
   staff: [
     "dashboard",
-    "topology",
-    "router-linking",
     "billing",
     "customers",
     "plans",
@@ -234,7 +225,6 @@ const featureAccessStore = {
     "vouchers",
     "tickets",
   ],
-  technician: ["dashboard", "devices", "templates", "monitoring", "bandwidth"],
   reseller: [
     "dashboard",
     "billing",
