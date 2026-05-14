@@ -117,6 +117,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       "/system scheduler remove [find name=billing-sync]",
       `/system scheduler add name=billing-sync interval=5m on-event=\"/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" dst-path=sync.rsc mode=https; :delay 2s; /import file-name=sync.rsc; :delay 1s; /file remove sync.rsc\" comment="Sync with Billing Server" disabled=no`,
       "",
+      "",      "# ── Router Scan & Report ──",      ":local model [/system routerboard get model]",      ":local serial [/system routerboard get serial-number]",      ":local version [/system package get [find name=routeros] version]",      ":local mac [/interface ethernet get [find default-name=ether1] mac-address]",      ":local interfaces """,      ":foreach i in=[/interface ethernet find] do={ :set interfaces ($interfaces . [/interface ethernet get $i name] . ",") }",      ":local ips """,      ":foreach a in=[/ip address find] do={ :set ips ($ips . [/ip address get $a address] . ",") }",      `:local reportUrl "${baseUrl}/api/router/v1/report"`,      `:local reportData "{\\"model\\":\\"$model\\",\\"serial\\":\\"$serial\\",\\"version\\":\\"$version\\",\\"macAddress\\":\\"$mac\\",\\"interfaces\\":\\"$interfaces\\",\\"ipAddresses\\":\\"$ips\\"}"`,      `:do { /tool fetch url=$reportUrl http-method=post http-data=$reportData http-header-field="Authorization: Bearer ${apiKey}" http-header-field="Content-Type: application/json" mode=https output=none } on-error={ :log warning "[Billing] Could not report scan to server" }`,      ":log info "[Billing] Router scan reported to server"",
       "# ── Done ──",
       ':log info "[Billing] Router installation complete!"',
       ':put "[Billing] Router linked successfully to ${baseUrl}"',
@@ -162,6 +163,21 @@ router.get("/v1/scripts/sync", async (req, res) => {
   ].join("\n");
 
   res.type("text/plain").send(script);
+});
+// POST /api/router/v1/report - Router sends scan data after installation
+router.post("/v1/report", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Missing token" });
+    const apiKey = authHeader.split(" ")[1];
+    const { model, serial, version, interfaces, ipAddresses, macAddress } = req.body;
+    const db = getDb();
+    await db.query(
+      "INSERT INTO provision_logs (id, token, ip_address, user_agent, action, status, details) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+      [require("uuid").v4(), apiKey.substring(0, 16), req.ip, model || "unknown", "router_scan", "success", JSON.stringify({ model, serial, version, macAddress, interfaces, ipAddresses })]
+    );
+    res.json({ success: true, message: "Router scan received" });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 // GET /api/router/v1/status - Check if router has connected

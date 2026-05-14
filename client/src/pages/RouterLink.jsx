@@ -35,7 +35,11 @@ export default function RouterLink() {
 
   useEffect(() => {
     fetchTenant();
+    if (apiKey) setPolling(true);
   }, []);
+
+  // Auto-start polling when apiKey becomes available
+  useEffect(() => { if (apiKey) setPolling(true); }, [apiKey]);
 
   const fetchTenant = async () => {
     try {
@@ -71,6 +75,7 @@ export default function RouterLink() {
         },
       );
       setApiKey(key);
+    setPolling(true);
       toast.success("API key generated");
     } catch (e) {
       toast.error("Failed to generate key");
@@ -87,11 +92,25 @@ export default function RouterLink() {
     setTimeout(() => setCopied(false), 3000);
   };
 
-  const checkConnection = async () => { try { const token = getToken(); const { data } = await axios.get(API + "/router/v1/status", { headers: { Authorization: "Bearer " + apiKey } }); setConnectionStatus(data); } catch (e) {} };
+  const checkConnection = async () => {
+    try {
+      const token = getToken();
+      const { data } = await axios.get(API + "/router/v1/status", {
+        headers: { Authorization: "Bearer " + apiKey },
+      });
+      setConnectionStatus(data);
+    } catch (e) {}
+  };
 
-  useEffect(() => { if (apiKey && polling) { checkConnection(); const interval = setInterval(checkConnection, 5000); return () => clearInterval(interval); } }, [apiKey, polling]);
+  useEffect(() => {
+    if (apiKey && polling) {
+      checkConnection();
+      const interval = setInterval(checkConnection, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [apiKey, polling]);
 
-const copyApiKey = () => {
+  const copyApiKey = () => {
     navigator.clipboard.writeText(apiKey);
     toast.success("API key copied");
   };
@@ -162,12 +181,27 @@ const copyApiKey = () => {
         <Card className="bg-zinc-900/60 border-zinc-800/50">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
-              <div className={"w-3 h-3 rounded-full " + (connectionStatus?.connected ? "bg-green-500 animate-pulse" : polling ? "bg-amber-500 animate-pulse" : "bg-zinc-600")} />
-              {connectionStatus?.connected ? "Router Connected" : polling ? "Waiting for connection..." : "Connection Status"}
+              <div
+                className={
+                  "w-3 h-3 rounded-full " +
+                  (connectionStatus?.connected
+                    ? "bg-green-500 animate-pulse"
+                    : polling
+                      ? "bg-amber-500 animate-pulse"
+                      : "bg-zinc-600")
+                }
+              />
+              {connectionStatus?.connected
+                ? "Router Connected"
+                : polling
+                  ? "Waiting for connection..."
+                  : "Connection Status"}
             </CardTitle>
             <CardDescription>
               {connectionStatus?.connected
-                ? "Last seen: " + new Date(connectionStatus.lastSeen).toLocaleString() + (connectionStatus.ip ? " from " + connectionStatus.ip : "")
+                ? "Last seen: " +
+                  new Date(connectionStatus.lastSeen).toLocaleString() +
+                  (connectionStatus.ip ? " from " + connectionStatus.ip : "")
                 : polling
                   ? "Run the installation command on your MikroTik router"
                   : "Click Start Monitoring to check for router connection"}
@@ -175,18 +209,26 @@ const copyApiKey = () => {
           </CardHeader>
           <CardContent>
             {!polling && !connectionStatus?.connected && (
-              <Button onClick={() => setPolling(true)} className="gap-2 w-full">Start Monitoring</Button>
+              <Button onClick={() => setPolling(true)} className="gap-2 w-full">
+                Start Monitoring
+              </Button>
             )}
             {polling && !connectionStatus?.connected && (
               <div className="flex items-center gap-3 text-amber-400">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm">Listening for router connection... Run the command on your MikroTik now.</span>
+                <span className="text-sm">
+                  Listening for router connection... Run the command on your
+                  MikroTik now.
+                </span>
               </div>
             )}
             {connectionStatus?.connected && (
               <div className="flex items-center gap-3 text-green-400">
                 <Check className="w-5 h-5" />
-                <span className="text-sm font-medium">Router linked successfully! You can now manage it from the dashboard.</span>
+                <span className="text-sm font-medium">
+                  Router linked successfully! You can now manage it from the
+                  dashboard.
+                </span>
               </div>
             )}
           </CardContent>
