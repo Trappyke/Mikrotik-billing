@@ -11,10 +11,7 @@ import { getToken } from "./lib/auth";
 import LoginPage from "./pages/LoginPage";
 import { Dashboard } from "./pages/Dashboard";
 import { ProjectDetail } from "./pages/ProjectDetail";
-import { Templates } from "./pages/Templates";
 import { ScriptOutput } from "./pages/ScriptOutput";
-import { TopologyBuilder } from "./pages/TopologyBuilder";
-import { RouterLinking } from "./pages/RouterLinking";
 import { BillingDashboard } from "./pages/billing/BillingDashboard";
 import { BillingCustomers } from "./pages/billing/BillingCustomers";
 import { BillingPlans } from "./pages/billing/BillingPlans";
@@ -180,9 +177,6 @@ function App() {
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/project/:id" element={<ProjectDetail />} />
-                    <Route path="/topology" element={<TopologyBuilder />} />
-                    <Route path="/router-linking" element={<RouterLinking />} />
-                    <Route path="/templates" element={<Templates />} />
                     <Route path="/output" element={<ScriptOutput />} />
 
                     {/* Billing */}

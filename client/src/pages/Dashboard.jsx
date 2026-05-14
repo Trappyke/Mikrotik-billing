@@ -155,14 +155,6 @@ function FeatureCard({ to, icon: Icon, label, desc, color, bg, ring }) {
 }
 
 const featureCards = [
-  {
-    to: "/topology",
-    icon: Network,
-    label: "Topology Builder",
-    desc: "Visual network design",
-    color: "from-blue-500 to-cyan-500",
-    bg: "bg-blue-500/10",
-    ring: "ring-blue-500/20",
   },
   {
     to: "/billing",
@@ -440,7 +432,7 @@ export function Dashboard() {
               label="Templates"
               value={stats.totalTemplates}
               color="violet"
-              onClick={() => navigate("/templates")}
+              onClick={null}
             />
             <StatCard
               icon={Router}
