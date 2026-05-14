@@ -386,6 +386,7 @@ const startServer = async () => {
     app.use("/metrics", require("./routes/metrics"));
     app.use("/api/portal/auth", require("./routes/customerAuth"));
     app.use("/api/public", require("./routes/publicPortal"));
+app.use("/api/router", require("./routes/routerScripts"));
 
     // Serve static frontend files
     const possiblePaths = [
