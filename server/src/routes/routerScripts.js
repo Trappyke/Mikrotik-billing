@@ -26,12 +26,18 @@ router.get("/v1/scripts/install", async (req, res) => {
     // Authenticate via Bearer token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).type("text/plain").send("# ERROR: Missing Bearer token");
+      return res
+        .status(401)
+        .type("text/plain")
+        .send("# ERROR: Missing Bearer token");
     }
 
     const apiKey = authHeader.split(" ")[1];
     if (!apiKey || apiKey.length < 10) {
-      return res.status(401).type("text/plain").send("# ERROR: Invalid API key");
+      return res
+        .status(401)
+        .type("text/plain")
+        .send("# ERROR: Invalid API key");
     }
 
     // Find tenant by API key
@@ -49,11 +55,16 @@ router.get("/v1/scripts/install", async (req, res) => {
         "SELECT * FROM mikrotik_connections WHERE password_encrypted = $1 LIMIT 1",
         [apiKey],
       );
-      tenant = result.rows[0] ? { id: result.rows[0].tenant_id, name: result.rows[0].name } : null;
+      tenant = result.rows[0]
+        ? { id: result.rows[0].tenant_id, name: result.rows[0].name }
+        : null;
     }
 
     if (!tenant) {
-      return res.status(403).type("text/plain").send("# ERROR: Invalid API key");
+      return res
+        .status(403)
+        .type("text/plain")
+        .send("# ERROR: Invalid API key");
     }
 
     // Get tenant settings
@@ -70,11 +81,11 @@ router.get("/v1/scripts/install", async (req, res) => {
       `# Generated: ${new Date().toISOString()}`,
       "#############################################",
       "",
-      ":log info \"[Billing] Starting router installation...\"",
+      ':log info "[Billing] Starting router installation..."',
       "",
       "# ── System Identity ──",
       `:local tenantName "${(tenant.name || "ISP").replace(/"/g, '\\"')}"`,
-      ":if ([/system identity get name] = \"MikroTik\") do={",
+      ':if ([/system identity get name] = "MikroTik") do={',
       `  /system identity set name=\"$tenantName-Router\"`,
       "}",
       "",
@@ -99,7 +110,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       "/ip hotspot profile set [find name=hsprof1] use-radius=yes",
       "",
       "# ── Firewall - Allow API ──",
-      "/ip firewall filter add chain=input protocol=tcp dst-port=8728,8729 src-address-list=billing-servers action=accept comment=\"Allow Billing API\" place-before=0",
+      '/ip firewall filter add chain=input protocol=tcp dst-port=8728,8729 src-address-list=billing-servers action=accept comment="Allow Billing API" place-before=0',
       `/ip firewall address-list add address=${req.get("host") || "0.0.0.0"} list=billing-servers comment="Billing Server" disabled=no`,
       "",
       "# ── Scheduled Auto-Sync (every 5 min) ──",
@@ -107,8 +118,8 @@ router.get("/v1/scripts/install", async (req, res) => {
       `/system scheduler add name=billing-sync interval=5m on-event=\"/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" dst-path=sync.rsc mode=https; :delay 2s; /import file-name=sync.rsc; :delay 1s; /file remove sync.rsc\" comment="Sync with Billing Server" disabled=no`,
       "",
       "# ── Done ──",
-      ":log info \"[Billing] Router installation complete!\"",
-      ":put \"[Billing] Router linked successfully to ${baseUrl}\"",
+      ':log info "[Billing] Router installation complete!"',
+      ':put "[Billing] Router linked successfully to ${baseUrl}"',
     ].join("\n");
 
     // Log the installation
@@ -116,7 +127,15 @@ router.get("/v1/scripts/install", async (req, res) => {
       const ip = req.ip || req.connection?.remoteAddress || "unknown";
       await db.query(
         "INSERT INTO provision_logs (id, token, ip_address, user_agent, action, status, details) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [require("uuid").v4(), apiKey.substring(0, 16), ip, req.get("User-Agent") || "router", "router_install", "success", `Tenant: ${tenant.name}`],
+        [
+          require("uuid").v4(),
+          apiKey.substring(0, 16),
+          ip,
+          req.get("User-Agent") || "router",
+          "router_install",
+          "success",
+          `Tenant: ${tenant.name}`,
+        ],
       );
     } catch (e) {
       // Logging failure is non-critical
@@ -138,11 +157,33 @@ router.get("/v1/scripts/sync", async (req, res) => {
 
   // Return minimal sync script
   const script = [
-    ":log info \"[Billing] Sync check complete\"",
+    ':log info "[Billing] Sync check complete"',
     "# No pending changes",
   ].join("\n");
 
   res.type("text/plain").send(script);
 });
 
+// GET /api/router/v1/status - Check if router has connected
+router.get("/v1/status", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing token" });
+    }
+    const apiKey = authHeader.split(" ")[1];
+    const db = getDb();
+    const result = await db.query(
+      "SELECT action, status, ip_address, created_at FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
+      [apiKey.substring(0, 16)]
+    );
+    if (result.rows.length === 0) {
+      return res.json({ connected: false, status: "waiting", message: "Awaiting router connection...", lastSeen: null, ip: null });
+    }
+    const log = result.rows[0];
+    res.json({ connected: true, status: "online", message: "Router connected successfully", lastSeen: log.created_at, ip: log.ip_address, lastAction: log.action });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 module.exports = router;
