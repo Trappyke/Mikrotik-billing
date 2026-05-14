@@ -12,11 +12,9 @@ import LoginPage from "./pages/LoginPage";
 import { Dashboard } from "./pages/Dashboard";
 import { ProjectDetail } from "./pages/ProjectDetail";
 import { Templates } from "./pages/Templates";
-import { MikroTikAPI } from "./pages/MikroTikAPI";
 import { ScriptOutput } from "./pages/ScriptOutput";
 import { TopologyBuilder } from "./pages/TopologyBuilder";
 import { RouterLinking } from "./pages/RouterLinking";
-import { Devices } from "./pages/Devices";
 import { BillingDashboard } from "./pages/billing/BillingDashboard";
 import { BillingCustomers } from "./pages/billing/BillingCustomers";
 import { BillingPlans } from "./pages/billing/BillingPlans";
@@ -59,7 +57,6 @@ import IntegrationsSettings from "./pages/IntegrationsSettings";
 import { SettingsPage } from "./pages/SettingsPage";
 import TenantSettingsPage from "./pages/TenantSettingsPage";
 import { AuditLogs } from "./pages/AuditLogs";
-import { ProvisionLogs } from "./pages/ProvisionLogs";
 import WebhooksPage from "./pages/WebhooksPage";
 import { FUPProfiles } from "./pages/network/FUPProfiles";
 import { TR069Devices } from "./pages/network/TR069Devices";
@@ -185,10 +182,7 @@ function App() {
                     <Route path="/project/:id" element={<ProjectDetail />} />
                     <Route path="/topology" element={<TopologyBuilder />} />
                     <Route path="/router-linking" element={<RouterLinking />} />
-                    <Route path="/devices" element={<Devices />} />
-                    <Route path="/provision-logs" element={<ProvisionLogs />} />
                     <Route path="/templates" element={<Templates />} />
-                    <Route path="/mikrotik-api" element={<MikroTikAPI />} />
                     <Route path="/output" element={<ScriptOutput />} />
 
                     {/* Billing */}

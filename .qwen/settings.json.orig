@@ -1,7 +1,41 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install)"
+      "Bash(npm install)",
+      "Bash(npm run *)",
+      "Bash(timeout *)",
+      "Bash(curl *)",
+      "Bash(taskkill *)",
+      "Bash(findstr *)",
+      "Bash(do *)",
+      "Bash(echo.)",
+      "Bash(del *)",
+      "Bash(node *)",
+      "Bash(npm uninstall *)",
+      "Bash(powershell *)",
+      "Bash(tasklist)",
+      "Bash(netstat *)",
+      "Bash(start *)",
+      "Bash(type *)",
+      "Bash(git init)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git config *)",
+      "Bash(copy *)",
+      "Bash(pg_isready *)",
+      "Bash(docker *)",
+      "Bash(mkdir *)",
+      "Bash(git remote *)",
+      "Bash(echo *)",
+      "Bash(git rm *)",
+      "Bash(git restore *)",
+      "Bash(git push *)",
+      "Bash(docker-compose *)",
+      "Bash(git ls-remote *)",
+      "Bash(ping *)",
+      "Bash(dir *)",
+      "Bash(select-object *)"
     ]
-  }
+  },
+  "$version": 3
 }

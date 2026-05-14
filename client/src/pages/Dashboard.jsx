@@ -165,15 +165,6 @@ const featureCards = [
     ring: "ring-blue-500/20",
   },
   {
-    to: "/devices",
-    icon: Settings,
-    label: "Auto Provision",
-    desc: "Zero-touch device setup",
-    color: "from-violet-500 to-purple-500",
-    bg: "bg-violet-500/10",
-    ring: "ring-violet-500/20",
-  },
-  {
     to: "/billing",
     icon: DollarSign,
     label: "ISP Billing",
@@ -456,7 +447,7 @@ export function Dashboard() {
               label="Connected Devices"
               value={stats.activeDevices}
               color="cyan"
-              onClick={() => navigate("/mikrotik-api")}
+              onClick={null}
             />
             <StatCard
               icon={AlertTriangle}
