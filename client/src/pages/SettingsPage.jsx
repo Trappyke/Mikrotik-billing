@@ -331,11 +331,6 @@ export function SettingsPage() {
 
   const allFeatures = [
     "dashboard",
-    "topology",
-    "router-linking",
-    "devices",
-    "templates",
-    "mikrotik-api",
     "integrations",
     "settings",
     "billing",
