@@ -45,11 +45,6 @@ const DEFAULT_PERMISSIONS = {
 const DEFAULT_FEATURE_ACCESS = {
   [ROLES.ADMIN]: [
     "dashboard",
-    "topology",
-    "router-linking",
-    "devices",
-    "templates",
-    "mikrotik-api",
     "integrations",
     "settings",
     "billing",
@@ -87,8 +82,6 @@ const DEFAULT_FEATURE_ACCESS = {
   ],
   [ROLES.STAFF]: [
     "dashboard",
-    "topology",
-    "router-linking",
     "billing",
     "customers",
     "plans",
@@ -110,8 +103,6 @@ const DEFAULT_FEATURE_ACCESS = {
   ],
   [ROLES.TECHNICIAN]: [
     "dashboard",
-    "devices",
-    "templates",
     "monitoring",
     "bandwidth",
   ],
