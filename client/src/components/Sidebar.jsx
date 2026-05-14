@@ -55,9 +55,6 @@ const API = import.meta.env.VITE_API_URL || "/api";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", feature: "dashboard" },
-  },
-    feature: "templates",
-  },
   {
     to: "/integrations",
     icon: Key,
