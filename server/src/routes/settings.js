@@ -154,11 +154,7 @@ const permissionsStore = {
     "customers:write",
     "reports:read",
   ],
-  technician: [
-    "network:read",
-    "network:write",
-    "monitoring:read",
-  ],
+  technician: ["network:read", "network:write", "monitoring:read"],
   reseller: [
     "customers:read",
     "customers:write",
@@ -353,15 +349,14 @@ router.put("/", async (req, res) => {
   }
 });
 
+const REMOVED_FEATURES = ["topology", "router-linking", "devices", "templates", "mikrotik-api"];
 // Get permissions
-router.get("/permissions", (req, res) => {
-  res.json(featureAccessStore);
+router.get("/permissions", (req, res) => { const cleaned = {}; for (const [role, features] of Object.entries(featureAccessStore)) { cleaned[role] = features.filter(f => !REMOVED_FEATURES.includes(f)); } res.json(cleaned);
 });
 
 // Update permissions
 router.put("/permissions", (req, res) => {
-  Object.assign(featureAccessStore, req.body);
-  res.json(featureAccessStore);
+  Object.assign(featureAccessStore, req.body); for (const [role, features] of Object.entries(featureAccessStore)) { featureAccessStore[role] = features.filter(f => !REMOVED_FEATURES.includes(f)); }
 });
 
 // Get payment gateway settings
