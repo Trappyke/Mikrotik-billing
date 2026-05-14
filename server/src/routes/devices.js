@@ -221,6 +221,48 @@ function parseJsonField(value, fallback) {
   }
 }
 
+function parseTokenMetadata(tokenRecord) {
+  return parseJsonField(tokenRecord?.metadata, {});
+}
+
+async function getEnrollmentTokenByValue(token) {
+  if (!token) {
+    return null;
+  }
+
+  if (!global.dbAvailable) {
+    return (
+      enrollmentMemoryStore.tokens.find((record) => record.token === token) ||
+      null
+    );
+  }
+
+  const result = await getDb().query(
+    "SELECT * FROM enrollment_tokens WHERE token = $1",
+    [token],
+  );
+  return result.rows[0] || null;
+}
+
+async function getDiscoveredManagementCredentials(discovered, overrides = {}) {
+  const tokenRecord = await getEnrollmentTokenByValue(
+    discovered?.enrollment_token,
+  );
+  const metadata = parseTokenMetadata(tokenRecord);
+  const password =
+    overrides.mgmt_password ||
+    discovered?.mgmt_password ||
+    metadata.mgmt_password ||
+    null;
+  const username =
+    overrides.mgmt_username ||
+    discovered?.mgmt_username ||
+    metadata.mgmt_username ||
+    (password ? "admin" : "");
+
+  return { username, password };
+}
+
 function normalizeDiscoveredRouter(row) {
   return {
     ...row,
@@ -447,8 +489,12 @@ router.post("/discovered/:id/approve", async (req, res) => {
 
     const routerId = uuidv4();
     const provisionToken = provisionStore.generateToken();
-    const encryptedMgmtPassword = mgmt_password
-      ? zeroTouchBilling.encryptForMikrotik(mgmt_password)
+    const managementCredentials = await getDiscoveredManagementCredentials(
+      discovered,
+      { mgmt_username, mgmt_password },
+    );
+    const encryptedMgmtPassword = managementCredentials.password
+      ? zeroTouchBilling.encryptForMikrotik(managementCredentials.password)
       : null;
 
     const selectedLanPorts = normalizeStringList(
@@ -491,7 +537,7 @@ router.post("/discovered/:id/approve", async (req, res) => {
         pppoe_interface || "",
         pppoe_service_name || "",
         mgmt_port || 8728,
-        mgmt_username || "",
+        managementCredentials.username,
         encryptedMgmtPassword,
         connection_type || "api",
         notes ||
@@ -901,8 +947,15 @@ router.post("/discovered/batch-approve", async (req, res) => {
 
         const routerId = uuidv4();
         const provisionToken = provisionStore.generateToken();
-        const encryptedMgmtPassword = config.mgmt_password
-          ? zeroTouchBilling.encryptForMikrotik(config.mgmt_password)
+        const managementCredentials = await getDiscoveredManagementCredentials(
+          discovered,
+          {
+            mgmt_username: config.mgmt_username,
+            mgmt_password: config.mgmt_password,
+          },
+        );
+        const encryptedMgmtPassword = managementCredentials.password
+          ? zeroTouchBilling.encryptForMikrotik(managementCredentials.password)
           : null;
 
         const selectedLanPorts = normalizeStringList(
@@ -949,7 +1002,7 @@ router.post("/discovered/batch-approve", async (req, res) => {
             config.pppoe_interface || "",
             config.pppoe_service_name || "",
             config.mgmt_port || 8728,
-            config.mgmt_username || "",
+            managementCredentials.username,
             encryptedMgmtPassword,
             config.connection_type || "api",
             config.notes ||

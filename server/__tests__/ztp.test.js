@@ -191,7 +191,7 @@ describe("Zero-Touch Provisioning Pipeline", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.headers["content-type"]).toMatch(/text\/plain/);
-      expect(res.text).toContain("# Zero-Touch Enrollment Script");
+      expect(res.text).toContain("# Zero-Touch Provisioning Script");
       expect(res.text).toContain(localToken);
       expect(res.text).toContain("/mikrotik/enroll/report/");
       expect(res.text).toContain("/mikrotik/enroll/iface/");
@@ -459,6 +459,8 @@ describe("Zero-Touch Provisioning Pipeline", () => {
       );
       expect(router).toBeDefined();
       expect(router.provision_status).toBe("pending");
+      expect(router.mgmt_username).toBe("admin");
+      expect(router.mgmt_password_encrypted).toBeTruthy();
 
       // Save shared state
       sharedProvisionToken = approveRes.body.provision_token;
