@@ -26,6 +26,15 @@ const API = import.meta.env.VITE_API_URL || '/api';
 
 const REMOTE_PROFILES = [
   {
+    id: 'secure-api-ssl',
+    label: 'Secure API (SSL)',
+    icon: Shield,
+    summary: 'Use when API-SSL is enabled on the router for encrypted communication on port 8729.',
+    connectionType: 'api-ssl',
+    defaults: { api_port: 8729, ssh_port: 22, use_tunnel: false },
+    checklist: ['Enable api-ssl on the router (/ip service enable api-ssl)|,'Allow TCP 8729 from your billing server IP|,'Uses TLS encryption for all API traffic'],
+  },
+  {
     id: 'direct-api',
     label: 'Direct API',
     icon: Globe,

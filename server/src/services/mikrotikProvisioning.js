@@ -57,8 +57,10 @@ async function withConnection(connectionId, handler) {
     throw new Error("MikroTik connection not found");
   }
 
+  const isSSL = connection.connection_type === 'api-ssl' || (connection.api_port && connection.api_port == 8729);
   const client = new MikroNode(connection.ip_address, {
     port: connection.api_port || 8728,
+    ssl: isSSL,
   });
   const session = await client.connect(
     connection.username,

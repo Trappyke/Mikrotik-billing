@@ -188,7 +188,8 @@ router.post('/test', async (req, res) => {
     } else {
       // Test API connection
       const MikroNode = require('mikronode');
-      const device = new MikroNode(ip_address, { port: api_port || 8728 });
+      const isSSL = connection_type === "api-ssl" || (api_port && api_port == 8729);
+      const device = new MikroNode(ip_address, { port: api_port || 8728, ssl: isSSL });
 
       try {
         const conn = await device.connect(username, password);
@@ -229,7 +230,8 @@ router.post('/push', async (req, res) => {
 
     // Execute script
     const MikroNode = require('mikronode');
-    const mikrotik = new MikroNode(device.ip_address, { port: device.api_port });
+    const isSSL = device.connection_type === "api-ssl" || (device.api_port && device.api_port == 8729);
+    const mikrotik = new MikroNode(device.ip_address, { port: device.api_port, ssl: isSSL });
 
     try {
       const connection = await mikrotik.connect(device.username, password);
@@ -406,7 +408,8 @@ router.get('/:id/ppp-secrets', async (req, res) => {
     password += decipher.final('utf8');
     
     const MikroNode = require('mikronode');
-    const device = new MikroNode(connection.ip_address, { port: connection.api_port || 8728 });
+    const isSSL = connection.connection_type === "api-ssl" || (connection.api_port && connection.api_port == 8729);
+    const device = new MikroNode(connection.ip_address, { port: connection.api_port || 8728, ssl: isSSL });
     const conn = await device.connect(connection.username, password);
     
     // Fetch PPP secrets
@@ -459,7 +462,8 @@ router.get('/:id/hotspot-users', async (req, res) => {
     password += decipher.final('utf8');
     
     const MikroNode = require('mikronode');
-    const device = new MikroNode(connection.ip_address, { port: connection.api_port || 8728 });
+    const isSSL = connection.connection_type === "api-ssl" || (connection.api_port && connection.api_port == 8729);
+    const device = new MikroNode(connection.ip_address, { port: connection.api_port || 8728, ssl: isSSL });
     const conn = await device.connect(connection.username, password);
     
     // Fetch Hotspot users
