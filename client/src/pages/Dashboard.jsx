@@ -155,7 +155,6 @@ function FeatureCard({ to, icon: Icon, label, desc, color, bg, ring }) {
 }
 
 const featureCards = [
-  },
   {
     to: "/billing",
     icon: DollarSign,
