@@ -63,28 +63,10 @@ const navItems = [
     feature: "router-linking",
   },
   {
-    to: "/devices",
-    icon: HardDrive,
-    label: "Provisioning",
-    feature: "devices",
-  },
-  {
-    to: "/provision-logs",
-    icon: FileText2,
-    label: "Provision Logs",
-    feature: "devices",
-  },
-  {
     to: "/templates",
     icon: FileCode,
     label: "Templates",
     feature: "templates",
-  },
-  {
-    to: "/mikrotik-api",
-    icon: Server,
-    label: "MikroTik API",
-    feature: "mikrotik-api",
   },
   {
     to: "/integrations",
@@ -251,12 +233,18 @@ const billingItems = [
     label: "Resellers",
     feature: "resellers",
   },
-    { to: "/credit-notes", icon: FileText2, label: "Credit Notes", feature: "invoices" },
-    { to: "/billing-backup",
-      icon: Database,
-      label: "Backups",
-      feature: "backups",
-    },
+  {
+    to: "/credit-notes",
+    icon: FileText2,
+    label: "Credit Notes",
+    feature: "invoices",
+  },
+  {
+    to: "/billing-backup",
+    icon: Database,
+    label: "Backups",
+    feature: "backups",
+  },
   { to: "/inventory", icon: Package, label: "Inventory", feature: "inventory" },
 ];
 
@@ -264,7 +252,6 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
   const [billingOpen, setBillingOpen] = useState(false);
   const [user, setUser] = useState(null);
   const branding = useBranding();
-  const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
   const { mode, setMode } = useTheme();
 
@@ -278,20 +265,6 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
     } catch (err) {
       console.error("Error parsing user data:", err);
     }
-  }, []);
-
-  useEffect(() => {
-    const fetchCount = async () => {
-      try {
-        const { data } = await axios.get(`${API}/devices/discovered/count`);
-        setPendingCount(data.count || 0);
-      } catch (e) {
-        // silently fail
-      }
-    };
-    fetchCount();
-    const id = setInterval(fetchCount, 15000);
-    return () => clearInterval(id);
   }, []);
 
   const handleLogout = () => {
@@ -353,11 +326,6 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             >
               <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
               <span className="truncate">{item.label}</span>
-              {item.to === "/devices" && pendingCount > 0 && (
-                <span className="ml-auto bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-tight">
-                  {pendingCount > 99 ? "99+" : pendingCount}
-                </span>
-              )}
             </NavLink>
           ))}
 
