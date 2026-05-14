@@ -739,7 +739,6 @@ export function SettingsPage() {
           "permissions",
           "payment-gateways",
           "bank-paybills",
-          "wireguard",
           "security",
           "billing",
           "network",
