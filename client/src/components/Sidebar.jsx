@@ -68,6 +68,12 @@ const navItems = [
     feature: "settings",
   },
   {
+  {
+    to: "/router-link",
+    icon: Router,
+    label: "Router Link",
+    feature: "settings",
+  },
     to: "/settings",
     icon: SettingsIcon,
     label: "Settings",

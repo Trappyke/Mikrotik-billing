@@ -52,6 +52,7 @@ import SetupWizard from "./pages/SetupWizard";
 import { UserManagement } from "./pages/UserManagement";
 import IntegrationsSettings from "./pages/IntegrationsSettings";
 import { SettingsPage } from "./pages/SettingsPage";
+import RouterLink from "./pages/RouterLink";
 import TenantSettingsPage from "./pages/TenantSettingsPage";
 import { AuditLogs } from "./pages/AuditLogs";
 import WebhooksPage from "./pages/WebhooksPage";
@@ -288,6 +289,7 @@ function App() {
                       element={<IntegrationsSettings />}
                     />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/router-link" element={<RouterLink />} />
                     <Route path="/tenant-branding" element={<TenantSettingsPage />} />
                     <Route path="/audit-logs" element={<AuditLogs />} />
                     <Route path="/webhooks" element={<WebhooksPage />} />
