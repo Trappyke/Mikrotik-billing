@@ -257,7 +257,9 @@ const startServer = async () => {
       const { runMigrations } = require("./db/migrate");
       await runMigrations();
       logger.info("Database migrations done");
-      db.query("SELECT 1").then(() => logger.info("DB pool warmed")).catch(() => {});
+      db.query("SELECT 1")
+        .then(() => logger.info("DB pool warmed"))
+        .catch(() => {});
       // Run webhook migration
       require("./db/webhookMigrations")
         .run()
@@ -386,7 +388,7 @@ const startServer = async () => {
     app.use("/metrics", require("./routes/metrics"));
     app.use("/api/portal/auth", require("./routes/customerAuth"));
     app.use("/api/public", require("./routes/publicPortal"));
-app.use("/api/router", require("./routes/routerScripts"));
+    app.use("/api/router", mikrotikLimiter, require("./routes/provision"));
 
     // Serve static frontend files
     const possiblePaths = [

@@ -227,27 +227,6 @@ router.put("/:id", async (req, res) => {
         req.params.id,
       ],
     );
-    // Sync branding to global settings table
-    try {
-      await db.query(
-        "INSERT INTO settings (key, value) VALUES ('primary_color', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-        [primary_color],
-      );
-      await db.query(
-        "INSERT INTO settings (key, value) VALUES ('secondary_color', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-        [secondary_color],
-      );
-      if (company_name)
-        await db.query(
-          "INSERT INTO settings (key, value) VALUES ('company_name', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-          [company_name],
-        );
-      if (logo_url)
-        await db.query(
-          "INSERT INTO settings (key, value) VALUES ('company_logo', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-          [logo_url],
-        );
-    } catch (e) {}
     res.json(result.rows[0]);
   } catch (e) {
     res.status(500).json({ error: e.message });

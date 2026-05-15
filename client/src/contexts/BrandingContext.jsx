@@ -20,20 +20,26 @@ export function BrandingProvider({ children }) {
     const token = localStorage.getItem("auth_token");
     if (!token) return;
 
+    // Read branding from tenant settings (single source of truth)
     axios
-      .get(`${API}/settings`, {
+      .get(`${API}/tenants/current`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then(({ data }) => {
         setBranding({
           company_name: data.company_name || "",
-          company_logo: data.company_logo || "",
+          company_logo: data.logo_url || "",
           primary_color: data.primary_color || "#3b82f6",
           secondary_color: data.secondary_color || "#1e293b",
-          branding_title: data.branding_title || "",
+          branding_title: data.company_name || "",
         });
       })
-      .catch(() => {});
+      .catch((e) => {
+        console.error(
+          "BrandingContext: Failed to load tenant branding",
+          e.message,
+        );
+      });
   }, []);
 
   const appName =
