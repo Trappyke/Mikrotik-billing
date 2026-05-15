@@ -39,7 +39,9 @@ export default function RouterLink() {
   }, []);
 
   // Auto-start polling when apiKey becomes available
-  useEffect(() => { if (apiKey) setPolling(true); }, [apiKey]);
+  useEffect(() => {
+    if (apiKey) setPolling(true);
+  }, [apiKey]);
 
   const fetchTenant = async () => {
     try {
@@ -75,7 +77,7 @@ export default function RouterLink() {
         },
       );
       setApiKey(key);
-    setPolling(true);
+      setPolling(true);
       toast.success("API key generated");
     } catch (e) {
       toast.error("Failed to generate key");
@@ -94,12 +96,13 @@ export default function RouterLink() {
 
   const checkConnection = async () => {
     try {
-      const token = getToken();
       const { data } = await axios.get(API + "/router/v1/status", {
         headers: { Authorization: "Bearer " + apiKey },
       });
       setConnectionStatus(data);
-    } catch (e) {}
+    } catch (e) {
+      console.error("Router status check failed:", e.message);
+    }
   };
 
   useEffect(() => {
