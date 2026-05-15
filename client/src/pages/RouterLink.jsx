@@ -96,12 +96,21 @@ export default function RouterLink() {
 
   const checkConnection = async () => {
     try {
+      console.log(
+        "[RouterLink] Checking connection with key:",
+        apiKey?.substring(0, 8) + "...",
+      );
       const { data } = await axios.get(API + "/router/v1/status", {
         headers: { Authorization: "Bearer " + apiKey },
       });
+      console.log("[RouterLink] Status response:", data);
       setConnectionStatus(data);
     } catch (e) {
-      console.error("Router status check failed:", e.message);
+      console.error(
+        "[RouterLink] Status check FAILED:",
+        e.response?.status,
+        e.response?.data || e.message,
+      );
     }
   };
 
