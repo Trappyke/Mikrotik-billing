@@ -68,8 +68,8 @@ export default function RouterLink() {
           "",
         );
       await axios.put(
-        `${API}/tenants/${tenantId}`,
-        { settings: { api_key: key } },
+        `${API}/tenants/${tenantId}/api-key`,
+        { api_key: key },
         {
           headers: { Authorization: `Bearer ${token}` },
         },

@@ -21,6 +21,16 @@ function getDb() {
 }
 
 // Logo upload config
+// Save API key for router linking
+router.put("/:id/api-key", async (req, res) => {
+  try {
+    const db = getDb();
+    const { api_key } = req.body;
+    if (!api_key) return res.status(400).json({ error: "api_key required" });
+    await db.query("UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2", [JSON.stringify({ api_key }), req.params.id]);
+    res.json({ success: true, api_key });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 const logosDir = path.join(__dirname, "..", "public", "logos");
 if (!fs.existsSync(logosDir)) fs.mkdirSync(logosDir, { recursive: true });
 const logoUpload = multer({
@@ -208,6 +218,7 @@ router.put("/:id", async (req, res) => {
         is_active,
         max_customers,
         max_routers,
+        req.body.settings || null,
         req.params.id,
       ],
     );
