@@ -69,8 +69,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       "  :if ([:len [/interface pppoe-server server find]] = 0) do={",
       "    /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no",
       "  }",
-      "  :local pppDef [/ppp profile find name=default]",
-      "  :if ([:len \$pppDef] > 0) do={ /ppp profile set \$pppDef use-radius=yes }",
+      '  :log info "[Billing] PPPoE checked"',
       '} on-error={ :log warning "[Billing] PPPoE setup skipped" }',
       "",
     ];
