@@ -80,7 +80,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       "/system scheduler remove [find name=billing-sync]",
       `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=https output=none" comment="Billing Sync" disabled=no`,
       "",
-      ":log info "[Billing] Done!"",
+      `:log info "[Billing] Done!"`,
       `:put "[Billing] Router linked to ${baseUrl}"`,
     ].join("\n");
 
