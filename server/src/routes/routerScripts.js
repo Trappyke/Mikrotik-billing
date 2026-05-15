@@ -50,8 +50,10 @@ router.get("/v1/scripts/install", async (req, res) => {
     const baseUrl = process.env.APP_URL || `https://${req.get("host")}`;
     const radiusServer = process.env.RADIUS_SERVER || req.get("host");
     const radiusSecret = process.env.RADIUS_SECRET || apiKey.substring(0, 16);
+    const wgEndpoint = process.env.WIREGUARD_ENDPOINT || "";
+    const wgServerPubkey = process.env.WIREGUARD_SERVER_PUBKEY || "";
 
-    const script = [
+    const scriptLines = [
       "#############################################",
       "# MikroTik Billing - Router Link Script",
       `# Server: ${baseUrl}`,
@@ -60,20 +62,49 @@ router.get("/v1/scripts/install", async (req, res) => {
       `:log info "[Billing] Starting..."`,
       "",
       "# RADIUS",
-      `/radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no`,
+      `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no } on-error={ :log warning "[Billing] RADIUS setup skipped" }`,
       "",
       "# PPPoE",
-      ":if ([:len [/interface pppoe-server server find]] = 0) do={",
-      "  /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no",
-      "}",
-      ":if ([:len [/ppp profile find name=default]] > 0) do={ /ppp profile set [find name=default] use-radius=yes }",
+      ":do {",
+      "  :if ([:len [/interface pppoe-server server find]] = 0) do={",
+      "    /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no",
+      "  }",
+      "  :if ([:len [/ppp profile find name=default]] > 0) do={ /ppp profile set [find name=default] use-radius=yes }",
+      '} on-error={ :log warning "[Billing] PPPoE setup skipped" }',
       "",
+    ];
+
+    // WireGuard tunnel (conditional on env vars)
+    if (wgEndpoint && wgServerPubkey) {
+      scriptLines.push(
+        "# WireGuard Tunnel",
+        `:global wgPubKey; :set wgPubKey ""`,
+        ":do {",
+        `  :if ([:len [/interface wireguard find name=mgmt-tunnel]] = 0) do={`,
+        `    /interface wireguard add name=mgmt-tunnel listen-port=13231 comment="Billing management tunnel"`,
+        `    /interface wireguard peers add interface=mgmt-tunnel public-key="${wgServerPubkey}" endpoint-address="${wgEndpoint}" endpoint-port=13231 allowed-address=0.0.0.0/0 persistent-keepalive=25s comment="Billing server"`,
+        `    :set wgPubKey [/interface wireguard get [find name=mgmt-tunnel] public-key]`,
+        `    /ip firewall filter add chain=input protocol=udp dst-port=13231 action=accept comment="Allow WireGuard billing"`,
+        `    :log info "[Billing] WireGuard tunnel created"`,
+        `  } else={`,
+        `    :set wgPubKey [/interface wireguard get [find name=mgmt-tunnel] public-key]`,
+        `    :log info "[Billing] WireGuard tunnel already exists"`,
+        `  }`,
+        '} on-error={ :log warning "[Billing] WireGuard setup failed" }',
+        "",
+      );
+    } else {
+      scriptLines.push(`:global wgPubKey; :set wgPubKey ""`, "");
+    }
+
+    scriptLines.push(
       "# Report back to server",
       ":local model [/system routerboard get model]",
       ":local serial [/system routerboard get serial-number]",
       ":local version [/system package get [find name=routeros] version]",
       ":local mac [/interface ethernet get [find default-name=ether1] mac-address]",
       `:local url "${baseUrl}/api/router/v1/report?model=\$model&serial=\$serial&version=\$version&mac=\$mac"`,
+      `:if ([:len \$wgPubKey] > 0) do={ :set url (\$url . "&wg_pubkey=" . \$wgPubKey) }`,
       `:do { /tool fetch url=\$url http-header-field="Authorization: Bearer ${apiKey}" mode=https output=none } on-error={ :log warning "[Billing] Report failed" }`,
       "",
       "# Schedule auto-sync",
@@ -82,7 +113,9 @@ router.get("/v1/scripts/install", async (req, res) => {
       "",
       `:log info "[Billing] Done!"`,
       `:put "[Billing] Router linked to ${baseUrl}"`,
-    ].join("\n");
+    );
+
+    const script = scriptLines.join("\n");
 
     // Log
     try {
@@ -114,7 +147,7 @@ router.get("/v1/report", async (req, res) => {
       return res.status(401).json({ error: "Missing token" });
     }
     const apiKey = authHeader.split(" ")[1];
-    const { model, serial, version, mac } = req.query;
+    const { model, serial, version, mac, wg_pubkey } = req.query;
     const db = getDb();
 
     // Find tenant by API key
@@ -158,17 +191,26 @@ router.get("/v1/report", async (req, res) => {
               model = COALESCE(NULLIF($1, ''), model),
               ip_address = $2,
               provision_status = 'online',
+              wireguard_public_key = COALESCE(NULLIF($4, ''), wireguard_public_key),
               updated_at = CURRENT_TIMESTAMP
             WHERE id = $3`,
-            [model, routerIp, routerId],
+            [model, routerIp, routerId, wg_pubkey || null],
           );
         } else {
           // Create new router
           const newRouter = await db.query(
-            `INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, provision_status)
-             VALUES ($1, $2, $3, $4, $5, $6, 'online')
+            `INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, wireguard_public_key, provision_status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'online')
              RETURNING id`,
-            [projectId, routerName, routerName, model, mac, routerIp],
+            [
+              projectId,
+              routerName,
+              routerName,
+              model,
+              mac,
+              routerIp,
+              wg_pubkey || null,
+            ],
           );
           routerId = newRouter.rows[0].id;
         }
@@ -188,7 +230,7 @@ router.get("/v1/report", async (req, res) => {
         req.ip,
         "router_scan",
         "success",
-        JSON.stringify({ model, serial, version, mac }),
+        JSON.stringify({ model, serial, version, mac, wg_pubkey }),
       ],
     );
 
@@ -250,18 +292,7 @@ router.get("/v1/scripts/sync", async (req, res) => {
       );
 
       if (tenantResult.rows.length > 0) {
-        // Update last_seen for routers associated with this tenant's token
-        await db.query(
-          `UPDATE routers SET
-            provision_status = 'online',
-            updated_at = CURRENT_TIMESTAMP
-           WHERE provision_token IN (
-             SELECT provision_token FROM provision_logs WHERE token = $1
-           )`,
-          [apiKey.substring(0, 16)],
-        );
-
-        // Also update by matching MAC from recent scan logs
+        // Update last_seen for routers linked via provision_logs
         await db.query(
           `UPDATE routers SET
             provision_status = 'online',

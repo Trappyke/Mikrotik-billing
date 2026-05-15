@@ -116,6 +116,9 @@ const provisioningMigrations = [
   `ALTER TABLE discovered_routers ADD COLUMN IF NOT EXISTS mgmt_username VARCHAR(100)`,
   `ALTER TABLE discovered_routers ADD COLUMN IF NOT EXISTS mgmt_password TEXT`,
 
+  -- WireGuard
+  `ALTER TABLE routers ADD COLUMN IF NOT EXISTS wireguard_public_key VARCHAR(64)`,
+
   // Indexes
   `CREATE INDEX IF NOT EXISTS idx_routers_project_id ON routers(project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_routers_token ON routers(provision_token)`,
