@@ -62,20 +62,9 @@ const navItems = [
     feature: "integrations",
   },
   {
-    to: "/tenant-branding",
-    icon: Palette,
-    label: "Tenant Branding",
-    feature: "settings",
-  },
-  {
     to: "/router-link",
     icon: Router,
     label: "Router Link",
-    feature: "settings",
-  },
-  { to: "/settings",
-    icon: SettingsIcon,
-    label: "Settings",
     feature: "settings",
   },
 ];
@@ -339,7 +328,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 w-full transition-all"
           >
             <DollarSign className="w-[18px] h-[18px] flex-shrink-0" />
-            <span className="flex-1 text-left">All Billing</span>
+            <span className="flex-1 text-left">Billing</span>
             {billingOpen ? (
               <ChevronDown className="w-3 h-3" />
             ) : (
@@ -386,7 +375,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
               <div className="h-px flex-1 bg-zinc-800/60" />
             </div>
             <NavLink
-              to="/users"
+              to="/settings"
               onClick={onCloseMobile}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
@@ -396,8 +385,8 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
                 }`
               }
             >
-              <Users className="w-[18px] h-[18px] flex-shrink-0" />
-              <span className="truncate">User Management</span>
+              <SettingsIcon className="w-[18px] h-[18px] flex-shrink-0" />
+              <span className="truncate">Settings</span>
             </NavLink>
             <NavLink
               to="/tenant-branding"
@@ -412,6 +401,20 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             >
               <Palette className="w-[18px] h-[18px] flex-shrink-0" />
               <span className="truncate">Tenant Branding</span>
+            </NavLink>
+            <NavLink
+              to="/users"
+              onClick={onCloseMobile}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? "bg-blue-500/10 text-blue-400"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                }`
+              }
+            >
+              <Users className="w-[18px] h-[18px] flex-shrink-0" />
+              <span className="truncate">User Management</span>
             </NavLink>
             <NavLink
               to="/audit-logs"
