@@ -57,7 +57,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       `# Server: ${baseUrl}`,
       "#############################################",
       "",
-      `:log info "[Billing] Starting..."`
+      `:log info "[Billing] Starting..."`,"
       "",
       "# RADIUS",
       `/radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no`,
