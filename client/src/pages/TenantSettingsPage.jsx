@@ -1,12 +1,27 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
-  Building2, Upload, Save, Check, Palette, Globe,
-  Image, Shield, Loader2, ExternalLink, Copy,
+  Building2,
+  Upload,
+  Save,
+  Check,
+  Palette,
+  Globe,
+  Image,
+  Shield,
+  Loader2,
+  ExternalLink,
+  Copy,
 } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { getToken } from "../lib/auth";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -14,9 +29,18 @@ import { Label } from "../components/ui/label";
 const API = import.meta.env.VITE_API_URL || "/api";
 
 const PRESET_COLORS = [
-  "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
-  "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16",
-  "#f97316", "#6366f1", "#14b8a6", "#a855f7",
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#6366f1",
+  "#14b8a6",
+  "#a855f7",
 ];
 
 export default function TenantSettingsPage() {
@@ -76,21 +100,37 @@ export default function TenantSettingsPage() {
     setSaving(true);
     try {
       const token = getToken();
-      await axios.put(`${API}/tenants/${tenant.id}`, {
-        company_name: tenant.company_name,
-        primary_color: tenant.primary_color,
-        secondary_color: tenant.secondary_color,
-        accent_color: tenant.accent_color,
-        domain: tenant.domain,
-        email: tenant.email,
-        phone: tenant.phone,
-        address: tenant.address,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      console.log(
+        "[TenantBranding] Saving tenant:",
+        tenant.id,
+        tenant.company_name,
+        tenant.primary_color,
+      );
+      const { data } = await axios.put(
+        `${API}/tenants/${tenant.id}`,
+        {
+          company_name: tenant.company_name,
+          primary_color: tenant.primary_color,
+          secondary_color: tenant.secondary_color,
+          accent_color: tenant.accent_color,
+          domain: tenant.domain,
+          email: tenant.email,
+          phone: tenant.phone,
+          address: tenant.address,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      console.log("[TenantBranding] Saved:", data);
       toast.success("Branding saved");
     } catch (e) {
-      toast.error("Failed to save", e.response?.data?.error);
+      console.error(
+        "[TenantBranding] Save failed:",
+        e.response?.status,
+        e.response?.data,
+      );
+      toast.error("Failed to save: " + (e.response?.data?.error || e.message));
     } finally {
       setSaving(false);
     }
@@ -114,7 +154,12 @@ export default function TenantSettingsPage() {
       const { data } = await axios.post(
         `${API}/tenants/${tenant.id}/logo`,
         form,
-        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" } },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        },
       );
       setTenant({ ...tenant, logo_url: data.logo_url });
       toast.success("Logo uploaded");
@@ -154,7 +199,11 @@ export default function TenantSettingsPage() {
           </p>
         </div>
         <Button onClick={handleSave} disabled={saving} className="gap-2">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
           Save Changes
         </Button>
       </div>
@@ -169,14 +218,18 @@ export default function TenantSettingsPage() {
                 <Building2 className="w-5 h-5 text-zinc-400" />
                 Company Info
               </CardTitle>
-              <CardDescription>Your company name and contact details</CardDescription>
+              <CardDescription>
+                Your company name and contact details
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <Label>Company Name</Label>
                 <Input
                   value={tenant.company_name}
-                  onChange={(e) => setTenant({ ...tenant, company_name: e.target.value })}
+                  onChange={(e) =>
+                    setTenant({ ...tenant, company_name: e.target.value })
+                  }
                   placeholder="My ISP Ltd"
                   className="bg-zinc-800/50 border-zinc-700/50 text-white mt-1"
                 />
@@ -186,7 +239,9 @@ export default function TenantSettingsPage() {
                   <Label>Email</Label>
                   <Input
                     value={tenant.email}
-                    onChange={(e) => setTenant({ ...tenant, email: e.target.value })}
+                    onChange={(e) =>
+                      setTenant({ ...tenant, email: e.target.value })
+                    }
                     placeholder="info@myisp.com"
                     className="bg-zinc-800/50 border-zinc-700/50 text-white mt-1"
                   />
@@ -195,7 +250,9 @@ export default function TenantSettingsPage() {
                   <Label>Phone</Label>
                   <Input
                     value={tenant.phone}
-                    onChange={(e) => setTenant({ ...tenant, phone: e.target.value })}
+                    onChange={(e) =>
+                      setTenant({ ...tenant, phone: e.target.value })
+                    }
                     placeholder="+254700000000"
                     className="bg-zinc-800/50 border-zinc-700/50 text-white mt-1"
                   />
@@ -205,7 +262,9 @@ export default function TenantSettingsPage() {
                 <Label>Address</Label>
                 <Input
                   value={tenant.address}
-                  onChange={(e) => setTenant({ ...tenant, address: e.target.value })}
+                  onChange={(e) =>
+                    setTenant({ ...tenant, address: e.target.value })
+                  }
                   placeholder="Nairobi, Kenya"
                   className="bg-zinc-800/50 border-zinc-700/50 text-white mt-1"
                 />
@@ -220,7 +279,9 @@ export default function TenantSettingsPage() {
                 <Image className="w-5 h-5 text-zinc-400" />
                 Logo
               </CardTitle>
-              <CardDescription>Upload your company logo (PNG, JPG, WebP, SVG — max 5MB)</CardDescription>
+              <CardDescription>
+                Upload your company logo (PNG, JPG, WebP, SVG — max 5MB)
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-6">
@@ -249,11 +310,17 @@ export default function TenantSettingsPage() {
                     disabled={uploading}
                     className="gap-2 border-zinc-700/50 text-zinc-300"
                   >
-                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {uploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
                     {uploading ? "Uploading..." : "Upload Logo"}
                   </Button>
                   <p className="text-xs text-zinc-500 mt-2">
-                    {fullLogoUrl ? `Current: ${fullLogoUrl}` : "No logo uploaded yet"}
+                    {fullLogoUrl
+                      ? `Current: ${fullLogoUrl}`
+                      : "No logo uploaded yet"}
                   </p>
                 </div>
               </div>
@@ -267,13 +334,27 @@ export default function TenantSettingsPage() {
                 <Palette className="w-5 h-5 text-zinc-400" />
                 Brand Colors
               </CardTitle>
-              <CardDescription>These colors appear on the login page and throughout the app</CardDescription>
+              <CardDescription>
+                These colors appear on the login page and throughout the app
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {[
-                { key: "primary_color", label: "Primary Color", desc: "Buttons, headings, accent elements" },
-                { key: "secondary_color", label: "Secondary Color", desc: "Background gradients, cards" },
-                { key: "accent_color", label: "Accent Color", desc: "Highlights, badges, icons" },
+                {
+                  key: "primary_color",
+                  label: "Primary Color",
+                  desc: "Buttons, headings, accent elements",
+                },
+                {
+                  key: "secondary_color",
+                  label: "Secondary Color",
+                  desc: "Background gradients, cards",
+                },
+                {
+                  key: "accent_color",
+                  label: "Accent Color",
+                  desc: "Highlights, badges, icons",
+                },
               ].map(({ key, label, desc }) => (
                 <div key={key} className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -289,7 +370,9 @@ export default function TenantSettingsPage() {
                   <div className="flex items-center gap-2">
                     <Input
                       value={tenant[key]}
-                      onChange={(e) => setTenant({ ...tenant, [key]: e.target.value })}
+                      onChange={(e) =>
+                        setTenant({ ...tenant, [key]: e.target.value })
+                      }
                       className="bg-zinc-800/50 border-zinc-700/50 text-white font-mono w-32"
                     />
                     <div className="flex gap-1.5 flex-wrap">
@@ -298,7 +381,9 @@ export default function TenantSettingsPage() {
                           key={color}
                           onClick={() => setTenant({ ...tenant, [key]: color })}
                           className={`w-7 h-7 rounded-md border-2 transition-all hover:scale-110 ${
-                            tenant[key] === color ? "border-white ring-2 ring-white/20" : "border-transparent"
+                            tenant[key] === color
+                              ? "border-white ring-2 ring-white/20"
+                              : "border-transparent"
                           }`}
                           style={{ backgroundColor: color }}
                           title={color}
@@ -319,13 +404,17 @@ export default function TenantSettingsPage() {
                 Custom Domain
               </CardTitle>
               <CardDescription>
-                Set a custom domain for your tenant. Point the domain to this server and your login page will show your branding automatically.
+                Set a custom domain for your tenant. Point the domain to this
+                server and your login page will show your branding
+                automatically.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Input
                 value={tenant.domain}
-                onChange={(e) => setTenant({ ...tenant, domain: e.target.value })}
+                onChange={(e) =>
+                  setTenant({ ...tenant, domain: e.target.value })
+                }
                 placeholder="portal.myisp.com"
                 className="bg-zinc-800/50 border-zinc-700/50 text-white"
               />
@@ -401,12 +490,20 @@ export default function TenantSettingsPage() {
                     {previewUrl}
                   </code>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(previewUrl); toast.success("URL copied"); }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(previewUrl);
+                      toast.success("URL copied");
+                    }}
                     className="text-zinc-500 hover:text-zinc-300"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
-                  <a href={previewUrl} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-300">
+                  <a
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-zinc-500 hover:text-zinc-300"
+                  >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
