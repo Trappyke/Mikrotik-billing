@@ -59,18 +59,22 @@ router.get("/v1/scripts/install", async (req, res) => {
       `# Server: ${baseUrl}`,
       "#############################################",
       "",
-      `:log info "[Billing] Starting..."`,
+      `:put "[Billing] Starting router link..."`,
       "",
       "# RADIUS",
-      `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no } on-error={ :log warning "[Billing] RADIUS setup skipped" }`,
+      `:put "[Billing] Setting up RADIUS..."`,
+      `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no; :put "[Billing] RADIUS configured" } on-error={ :put "[Billing] RADIUS skipped (unsupported or exists)" }`,
       "",
       "# PPPoE",
+      `:put "[Billing] Setting up PPPoE..."`,
       ":do {",
       "  :if ([:len [/interface pppoe-server server find]] = 0) do={",
       "    /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no",
+      '    :put "[Billing] PPPoE server created"',
+      "  } else={",
+      '    :put "[Billing] PPPoE server already exists"',
       "  }",
-      '  :log info "[Billing] PPPoE checked"',
-      '} on-error={ :log warning "[Billing] PPPoE setup skipped" }',
+      '} on-error={ :put "[Billing] PPPoE setup skipped" }',
       "",
     ];
 
@@ -98,7 +102,7 @@ router.get("/v1/scripts/install", async (req, res) => {
     }
 
     scriptLines.push(
-      "# Report back to server",
+      `:put "[Billing] Reporting to server..."`,
       ":local model [/system routerboard get model]",
       ":local serial [/system routerboard get serial-number]",
       ":local version [/system package get [find name=routeros] version]",
@@ -111,7 +115,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       "/system scheduler remove [find name=billing-sync]",
       `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=https output=none" comment="Billing Sync" disabled=no`,
       "",
-      `:log info "[Billing] Done!"`,
+      `:put "[Billing] Done!"`,
       `:put "[Billing] Router linked to ${baseUrl}"`,
     );
 
