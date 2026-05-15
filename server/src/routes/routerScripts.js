@@ -117,11 +117,74 @@ router.get("/v1/report", async (req, res) => {
     const { model, serial, version, mac } = req.query;
     const db = getDb();
 
+    // Find tenant by API key
+    let tenant;
+    try {
+      const tenantResult = await db.query(
+        "SELECT * FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
+        [apiKey],
+      );
+      tenant = tenantResult.rows[0];
+    } catch (e) {
+      tenant = null;
+    }
+
+    // Upsert router record if we have a MAC and tenant
+    let routerId = null;
+    if (tenant && mac) {
+      try {
+        // Find project for this tenant (use first project or create default)
+        const projectResult = await db.query(
+          "SELECT id FROM projects ORDER BY created_at ASC LIMIT 1",
+        );
+        const projectId =
+          projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
+
+        // Check if router already exists by MAC
+        const existingRouter = await db.query(
+          "SELECT id FROM routers WHERE mac_address = $1 LIMIT 1",
+          [mac],
+        );
+
+        const routerName =
+          model || `Router-${(mac || "unknown").replace(/:/g, "-")}`;
+        const routerIp = req.ip || req.connection?.remoteAddress || "unknown";
+
+        if (existingRouter.rows.length > 0) {
+          // Update existing router
+          routerId = existingRouter.rows[0].id;
+          await db.query(
+            `UPDATE routers SET
+              model = COALESCE(NULLIF($1, ''), model),
+              ip_address = $2,
+              provision_status = 'online',
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3`,
+            [model, routerIp, routerId],
+          );
+        } else {
+          // Create new router
+          const newRouter = await db.query(
+            `INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, provision_status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'online')
+             RETURNING id`,
+            [projectId, routerName, routerName, model, mac, routerIp],
+          );
+          routerId = newRouter.rows[0].id;
+        }
+      } catch (e) {
+        // Router upsert failed but we still log the scan
+        console.error("Failed to upsert router:", e.message);
+      }
+    }
+
+    // Log the scan
     await db.query(
-      "INSERT INTO provision_logs (id, token, ip_address, action, status, details) VALUES ($1,$2,$3,$4,$5,$6)",
+      "INSERT INTO provision_logs (id, token, router_id, ip_address, action, status, details) VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [
         require("uuid").v4(),
         apiKey.substring(0, 16),
+        routerId,
         req.ip,
         "router_scan",
         "success",
@@ -129,7 +192,7 @@ router.get("/v1/report", async (req, res) => {
       ],
     );
 
-    res.json({ success: true });
+    res.json({ success: true, router_id: routerId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -174,6 +237,48 @@ router.get("/v1/status", async (req, res) => {
 
 // GET /api/router/v1/scripts/sync
 router.get("/v1/scripts/sync", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const apiKey = authHeader.split(" ")[1];
+      const db = getDb();
+
+      // Find tenant by API key
+      const tenantResult = await db.query(
+        "SELECT * FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
+        [apiKey],
+      );
+
+      if (tenantResult.rows.length > 0) {
+        // Update last_seen for routers associated with this tenant's token
+        await db.query(
+          `UPDATE routers SET
+            provision_status = 'online',
+            updated_at = CURRENT_TIMESTAMP
+           WHERE provision_token IN (
+             SELECT provision_token FROM provision_logs WHERE token = $1
+           )`,
+          [apiKey.substring(0, 16)],
+        );
+
+        // Also update by matching MAC from recent scan logs
+        await db.query(
+          `UPDATE routers SET
+            provision_status = 'online',
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id IN (
+             SELECT router_id FROM provision_logs
+             WHERE token = $1 AND router_id IS NOT NULL
+             ORDER BY created_at DESC LIMIT 1
+           )`,
+          [apiKey.substring(0, 16)],
+        );
+      }
+    }
+  } catch (e) {
+    // Sync update is best-effort
+  }
+
   res.type("text/plain").send(':log info "[Billing] Sync OK"');
 });
 
