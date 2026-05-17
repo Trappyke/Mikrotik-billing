@@ -2076,6 +2076,34 @@ router.get("/v1/:slug/routers", async (req, res) => {
   }
 });
 
+// DELETE /v1/:slug/routers/:id — Remove an unwanted router
+router.delete("/v1/:slug/routers/:id", async (req, res) => {
+  try {
+    const { slug, id } = req.params;
+    const db = getDb();
+    const tenant = await findTenantBySlugOrKey(slug, null);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+    const router = await db.query("SELECT id, linked_mikrotik_connection_id FROM routers WHERE id = $1 AND tenant_id = $2", [id, tenant.id]);
+    if (router.rows.length === 0) return res.status(404).json({ error: "Router not found" });
+
+    // Delete associated mikrotik_connection if it exists
+    if (router.rows[0].linked_mikrotik_connection_id) {
+      try {
+        await db.query("DELETE FROM mikrotik_connections WHERE id = $1", [router.rows[0].linked_mikrotik_connection_id]);
+      } catch (e) { /* non-fatal */ }
+    }
+
+    // Delete provision_logs and the router itself
+    await db.query("DELETE FROM provision_logs WHERE router_id = $1", [id]);
+    await db.query("DELETE FROM routers WHERE id = $1", [id]);
+
+    res.json({ success: true, message: "Router removed" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // In-memory watch sessions
 const watchSessions = new Map();
 

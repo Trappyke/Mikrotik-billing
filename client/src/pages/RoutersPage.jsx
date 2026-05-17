@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import {
   Router, Copy, Check, Key, Terminal, Loader2, Shield, AlertCircle,
-  Link2, Plug, Wifi, WifiOff, Activity, Server,
+  Link2, Plug, Wifi, WifiOff, Activity, Server, Trash2,
 } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { getToken } from "../lib/auth";
@@ -36,6 +36,7 @@ export default function RoutersPage() {
   const [mgmtPass, setMgmtPass] = useState("");
   const [mgmtPort, setMgmtPort] = useState("8728");
   const [showCredentials, setShowCredentials] = useState(false);
+  const [deleting, setDeleting] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [lastError, setLastError] = useState(null);
   const [watchAttempts, setWatchAttempts] = useState(0);
@@ -73,6 +74,18 @@ export default function RoutersPage() {
   };
 
   useEffect(() => { if (tenantSlug) { fetchRouters(); const i = setInterval(fetchRouters, 15000); return () => clearInterval(i); } }, [tenantSlug]);
+
+  const deleteRouter = async (routerId, routerName) => {
+    if (!confirm(`Delete "${routerName}"? This removes the router and its API connection permanently.`)) return;
+    setDeleting(routerId);
+    try {
+      await axios.delete(`${API}/router/v1/${tenantSlug}/routers/${routerId}`);
+      toast.success("Router deleted");
+      fetchRouters();
+    } catch (e) {
+      toast.error(e.response?.data?.error || "Delete failed");
+    } finally { setDeleting(null); }
+  };
 
   // Watch session
   const startWatching = async () => {
@@ -203,6 +216,14 @@ export default function RoutersPage() {
                     <span className={`text-xs px-2 py-1 rounded-full ${r.linked_mikrotik_connection_id ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'}`}>
                       {r.linked_mikrotik_connection_id ? 'managed' : 'unmanaged'}
                     </span>
+                    <button
+                      onClick={() => deleteRouter(r.id, r.name)}
+                      disabled={deleting === r.id}
+                      className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Delete router"
+                    >
+                      {deleting === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
               ))}
