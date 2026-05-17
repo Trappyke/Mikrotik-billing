@@ -180,7 +180,7 @@ const PORT = process.env.PORT || 5000;
 app.disable("x-powered-by");
 app.set("trust proxy", isProductionEnv ? 1 : false);
 app.set("query parser", "simple");
-const monitoringApiEnabled = process.env.ENABLE_MONITORING_API === "true";
+const monitoringApiEnabled = process.env.ENABLE_MONITORING_API !== "false";
 
 // HTTPS redirect (respects proxy headers from Render, Railway, etc.)
 app.use((req, res, next) => {

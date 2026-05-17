@@ -60,7 +60,7 @@ router.post("/wallet/:customerId/topup", async (req, res) => {
       customer,
       payment: { reference: reference || result.transaction.id },
       invoice: { total: amount, paid_amount: amount },
-    }).catch(() => {});
+    }).catch((e) => console.error("triggerMessage failed:", e?.message || e));
   }
 
   res.json(result);
