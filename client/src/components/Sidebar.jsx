@@ -62,9 +62,9 @@ const navItems = [
     feature: "integrations",
   },
   {
-    to: "/router-link",
+    to: "/routers",
     icon: Router,
-    label: "Router Link",
+    label: "Routers",
     feature: "settings",
   },
 ];
