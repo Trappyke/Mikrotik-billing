@@ -1837,7 +1837,244 @@ router.get("/v1/scripts/install", async (req, res) => {
 
     res.type("text/plain").send(script);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// SLUG-BASED ROUTES (tenant in URL path)
+// More reliable: tenant identified by URL slug, API key is validation only
+// ═══════════════════════════════════════
+
+async function findTenantBySlugOrKey(slug, apiKey) {
+  const db = getDb();
+  if (slug) {
+    const result = await db.query(
+      "SELECT * FROM tenants WHERE slug = $1 AND is_active = true LIMIT 1",
+      [slug],
+    );
+    return result.rows[0] || null;
+  }
+  if (apiKey) {
+    const result = await db.query(
+      "SELECT * FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
+      [apiKey],
+    );
+    return result.rows[0] || null;
+  }
+  return null;
+}
+
+// GET /v1/:slug/install
+router.get("/v1/:slug/install", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const authHeader = req.headers.authorization;
+    const apiKey = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1] : "";
+
+    const tenant = await findTenantBySlugOrKey(slug, apiKey);
+    if (!tenant) {
+      return res.status(403).type("text/plain").send("# ERROR: Invalid tenant or API key");
+    }
+
+    // Validate API key matches tenant
+    const storedKey = tenant.settings?.api_key;
+    if (apiKey && storedKey && apiKey !== storedKey) {
+      return res.status(403).type("text/plain").send("# ERROR: API key does not match this tenant");
+    }
+
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+    const isHttps = baseUrl.startsWith("https");
+    const fetchMode = isHttps ? "https" : "http";
+    const radiusServer = process.env.RADIUS_SERVER || req.get("host");
+    const radiusSecret = process.env.RADIUS_SECRET || (apiKey || slug).substring(0, 16);
+
+    const script = [
+      "#############################################",
+      "# MikroTik Billing - Router Link Script",
+      `# Tenant: ${tenant.name || slug}`,
+      `# Server: ${baseUrl}`,
+      "#############################################",
+      "",
+      ':put "[Billing] Starting router link..."',
+      "",
+      "# ── Management credentials (set BEFORE running) ──",
+      '# :global ztpMgmtUser "admin"',
+      '# :global ztpMgmtPass "your-password"',
+      ":global ztpMgmtUser; :global ztpMgmtPass;",
+      ':local hasCreds [:len $ztpMgmtUser]',
+      ':if ($hasCreds > 0) do={ :put "[Billing] Management credentials: set" } else={ :put "[Billing] No credentials set - add later" }',
+      "",
+      "# RADIUS",
+      ':put "[Billing] Setting up RADIUS..."',
+      `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no } on-error={ :put "[Billing] RADIUS skipped" }`,
+      "",
+      "# PPPoE",
+      ':put "[Billing] Setting up PPPoE..."',
+      ":do { :if ([:len [/interface pppoe-server server find]] = 0) do={ /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no } } on-error={}",
+      "",
+      "# Firewall - Allow API",
+      ':put "[Billing] Setting up firewall..."',
+      ':do { /ip firewall filter add chain=input protocol=tcp dst-port=8728 action=accept comment="Billing API" place-before=0 } on-error={}',
+      "",
+      "# Report back",
+      ':put "[Billing] Reporting to server..."',
+      ":local model; :do { :set model [/system routerboard get model] } on-error={}",
+      ":local mac; :do { :set mac [/interface ethernet get [find default-name=ether1] mac-address] } on-error={}",
+      ":local reportUrl \"" + baseUrl + "/api/router/v1/" + slug + "/report?model=$model&mac=$mac\"",
+      ":local mgmtUser $ztpMgmtUser; :local mgmtPass $ztpMgmtPass",
+      ":if ([:len $mgmtUser] > 0) do={ :set reportUrl ($reportUrl . \"&mgmt_user=$mgmtUser\") }",
+      ":if ([:len $mgmtPass] > 0) do={ :set reportUrl ($reportUrl . \"&mgmt_pass=$mgmtPass\") }",
+      `:do { /tool fetch url=$reportUrl http-header-field="Authorization: Bearer ${apiKey}" mode=${fetchMode} output=none } on-error={ :log warning "[Billing] Report failed" }`,
+      "",
+      "# Schedule auto-sync",
+      "/system scheduler remove [find name=billing-sync]",
+      `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/${slug}/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=${fetchMode} output=none" comment="Billing Sync" disabled=no`,
+      "",
+      ':put "[Billing] Done!"',
+      `:put "[Billing] Router linked to ${baseUrl}"`,
+    ].join("\n");
+
+    res.type("text/plain").send(script);
+  } catch (error) {
     res.status(500).type("text/plain").send("# ERROR: Internal server error");
+  }
+});
+
+// GET /v1/:slug/report
+router.get("/v1/:slug/report", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const authHeader = req.headers.authorization;
+    const apiKey = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1] : "";
+    const { model, serial, version, mac, mgmt_user, mgmt_pass, mgmt_port } = req.query;
+    const db = getDb();
+
+    const tenant = await findTenantBySlugOrKey(slug, apiKey);
+    if (!tenant) {
+      return res.status(403).json({ error: "Invalid tenant or API key" });
+    }
+
+    let routerId = null;
+    if (mac) {
+      try {
+        const projectResult = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1");
+        const projectId = projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
+        const existingRouter = await db.query("SELECT id FROM routers WHERE mac_address = $1 LIMIT 1", [mac]);
+        const routerName = model || `Router-${(mac || "unknown").replace(/:/g, "-")}`;
+        const routerIp = getClientIp(req);
+
+        if (existingRouter.rows.length > 0) {
+          routerId = existingRouter.rows[0].id;
+          await db.query(
+            "UPDATE routers SET model = COALESCE(NULLIF($1, ''), model), ip_address = $2, provision_status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+            [model, routerIp, routerId],
+          );
+          try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
+        } else {
+          const newRouter = await db.query(
+            "INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, provision_status) VALUES ($1,$2,$3,$4,$5,$6,'online') RETURNING id",
+            [projectId, routerName, routerName, model, mac, routerIp],
+          );
+          routerId = newRouter.rows[0].id;
+          try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
+        }
+      } catch (e) {
+        console.error("Failed to upsert router:", e.message);
+      }
+    }
+
+    // Create mikrotik_connection if credentials provided
+    let connectionId = null;
+    if (routerId && mgmt_user && mgmt_pass) {
+      try {
+        const activationResult = await zeroTouchBilling.ensureMikrotikConnection(routerId, {
+          mgmt_username: mgmt_user,
+          mgmt_password: mgmt_pass,
+          mgmt_port: mgmt_port ? parseInt(mgmt_port, 10) : 8728,
+          connection_type: "api",
+        });
+        if (activationResult?.connection?.id) {
+          connectionId = activationResult.connection.id;
+          await db.query("UPDATE routers SET linked_mikrotik_connection_id = $1, billing_activated_at = CURRENT_TIMESTAMP WHERE id = $2", [connectionId, routerId]);
+          try {
+            await zeroTouchBilling.activateRouterInBilling(routerId);
+          } catch (syncErr) {
+            console.error("Failed to sync subscriptions:", syncErr.message);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to create connection:", e.message);
+      }
+    }
+
+    try {
+      await db.query(
+        "INSERT INTO provision_logs (id, token, router_id, ip_address, action, status, details) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        [uuidv4(), slug.substring(0, 16), routerId, getClientIp(req), "router_scan", "success", JSON.stringify({ model, serial, version, mac, has_credentials: !!(mgmt_user && mgmt_pass), connection_id: connectionId })],
+      );
+    } catch (logErr) {}
+
+    res.json({ success: true, router_id: routerId, connection_id: connectionId, linked: !!connectionId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /v1/:slug/status
+router.get("/v1/:slug/status", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const authHeader = req.headers.authorization;
+    const apiKey = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1] : "";
+    const db = getDb();
+
+    const tenant = await findTenantBySlugOrKey(slug, apiKey);
+    if (!tenant) {
+      return res.json({ connected: false, status: "invalid_tenant", message: "Tenant not found. Check your URL." });
+    }
+
+    // Primary: find router by tenant_id
+    const routerResult = await db.query(
+      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1",
+      [tenant.id],
+    );
+
+    if (routerResult.rows.length > 0) {
+      const r = routerResult.rows[0];
+      return res.json({
+        connected: true,
+        status: "online",
+        message: "Router connected",
+        lastSeen: r.updated_at,
+        ip: r.ip_address,
+        router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+      });
+    }
+
+    return res.json({
+      connected: false,
+      status: "waiting",
+      message: "Awaiting router connection... Run the command on your MikroTik.",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /v1/:slug/sync
+router.get("/v1/:slug/sync", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const tenant = await findTenantBySlugOrKey(slug, null);
+    if (tenant) {
+      try {
+        await getDb().query("UPDATE routers SET provision_status = 'online', updated_at = CURRENT_TIMESTAMP WHERE tenant_id = $1 AND provision_status != 'offline'", [tenant.id]);
+      } catch (e) {}
+    }
+    res.type("text/plain").send(':log info "[Billing] Sync OK"');
+  } catch (e) {
+    res.type("text/plain").send(':log info "[Billing] Sync OK"');
   }
 });
 

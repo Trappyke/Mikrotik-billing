@@ -38,6 +38,7 @@ export default function RouterLink() {
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tenantId, setTenantId] = useState("");
+  const [tenantSlug, setTenantSlug] = useState("");
   const [appUrl, setAppUrl] = useState(
     () => localStorage.getItem("router_link_app_url") || window.location.origin
   );
@@ -77,6 +78,7 @@ export default function RouterLink() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTenantId(data.id);
+      setTenantSlug(data.slug || data.name?.toLowerCase().replace(/\s+/g, "-") || "");
       const storedKey = localStorage.getItem("router_link_api_key");
       const tenantKey = data.settings?.api_key;
       // Prefer tenant key, fall back to localStorage, fall back to empty
@@ -127,13 +129,14 @@ export default function RouterLink() {
   const buildCommand = () => {
     const mode = appUrl.startsWith("https") ? "https" : "http";
     const certFlag = appUrl.startsWith("https") ? " check-certificate=no" : "";
+    const slugPath = tenantSlug ? `/v1/${tenantSlug}/install` : "/v1/scripts/install";
     let prefix = "";
 
     if (mgmtUser && mgmtPass) {
       prefix = `:global ztpMgmtUser "${mgmtUser}"; :global ztpMgmtPass "${mgmtPass}"; `;
     }
 
-    return `${prefix}/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path=install.rsc mode=${mode}${certFlag}; :delay 4s; /import file-name=install.rsc; :delay 1s; /file remove install.rsc`;
+    return `${prefix}/tool fetch url="${appUrl}/api/router${slugPath}" http-header-field="Authorization: Bearer ${apiKey}" dst-path=install.rsc mode=${mode}${certFlag}; :delay 4s; /import file-name=install.rsc; :delay 1s; /file remove install.rsc`;
   };
 
   const copyCommand = () => {
@@ -184,7 +187,8 @@ export default function RouterLink() {
     const key = keyOverride || apiKey;
     if (!key) return null;
     try {
-      const url = `${API}/router/v1/status?t=${Date.now()}`;
+      const slugPath = tenantSlug ? `/v1/${tenantSlug}/status` : "/v1/status";
+      const url = `${API}/router${slugPath}?t=${Date.now()}`;
       const { data } = await axios.get(url, {
         headers: { Authorization: "Bearer " + key },
       });
