@@ -1885,6 +1885,12 @@ router.get("/v1/report", async (req, res) => {
             `UPDATE routers SET model = COALESCE(NULLIF($1, ''), model), ip_address = $2, provision_status = 'online', wireguard_public_key = COALESCE(NULLIF($4, ''), wireguard_public_key), updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
             [model, routerIp, routerId, wg_pubkey || null],
           );
+          // Set tenant_id separately (column may not exist yet, don't break the flow)
+          try {
+            await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]);
+          } catch (colErr) {
+            console.error("routers.tenant_id column missing, skipping:", colErr.message);
+          }
         } else {
           const newRouter = await db.query(
             `INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, wireguard_public_key, provision_status) VALUES ($1,$2,$3,$4,$5,$6,$7,'online') RETURNING id`,
@@ -1899,6 +1905,12 @@ router.get("/v1/report", async (req, res) => {
             ],
           );
           routerId = newRouter.rows[0].id;
+          // Set tenant_id separately
+          try {
+            await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]);
+          } catch (colErr) {
+            console.error("routers.tenant_id column missing, skipping:", colErr.message);
+          }
         }
       } catch (e) {
         console.error("Failed to upsert router:", e.message);
@@ -1976,7 +1988,7 @@ router.get("/v1/status", async (req, res) => {
     const tokenPrefix = apiKey.substring(0, 16);
     const db = getDb();
 
-    // Verify this API key belongs to a tenant (log warning but don't block - polling endpoint)
+    // Find tenant by this API key
     let tenant = null;
     try {
       const tenantResult = await db.query(
@@ -1984,12 +1996,9 @@ router.get("/v1/status", async (req, res) => {
         [apiKey],
       );
       tenant = tenantResult.rows[0];
-    } catch (e) {
-      // Tenant table might not exist yet or query might fail in memory mode
-    }
+    } catch (e) {}
 
     if (!tenant) {
-      // Key may not match what's stored - try the stored key from localStorage
       return res.json({
         connected: false,
         status: "invalid_key",
@@ -1998,78 +2007,88 @@ router.get("/v1/status", async (req, res) => {
       });
     }
 
-    // Get the latest provision log
-    const logResult = await db.query(
-      "SELECT action, status, ip_address, router_id, created_at, details FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
-      [tokenPrefix],
+    // PRIMARY: Find routers by tenant_id (most reliable)
+    const routerResult = await db.query(
+      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1",
+      [tenant.id],
     );
 
-    if (logResult.rows.length === 0) {
-      // Fallback: check routers table for any router linked to this token
-      const routerResult = await db.query(
-        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) OR provision_token = $1 LIMIT 1",
-        [tokenPrefix],
-      );
-
-      if (routerResult.rows.length > 0) {
-        const r = routerResult.rows[0];
-        return res.json({
-          connected: true,
-          status: r.provision_status || "online",
-          message: "Router found (fallback check)",
-          router: {
-            id: r.id,
-            name: r.name,
-            model: r.model,
-            mac: r.mac_address,
-            ip: r.ip_address,
-            has_connection: !!r.linked_mikrotik_connection_id,
-          },
-        });
-      }
-
+    if (routerResult.rows.length > 0) {
+      const r = routerResult.rows[0];
       return res.json({
-        connected: false,
-        status: "waiting",
-        message: "Awaiting router connection... Run the command on your MikroTik.",
-        hint: "Make sure the MikroTik can reach this server. The script reports back after running.",
-      });
-    }
-
-    const log = logResult.rows[0];
-    let details = {};
-    try { details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {}); } catch(e) {}
-
-    // If we have a router_id, get the full router info
-    let router = null;
-    if (log.router_id) {
-      const routerResult = await db.query(
-        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
-        [log.router_id],
-      );
-      if (routerResult.rows.length > 0) {
-        const r = routerResult.rows[0];
-        router = {
+        connected: true,
+        status: "online",
+        message: "Router connected",
+        lastSeen: r.updated_at,
+        ip: r.ip_address,
+        router: {
           id: r.id,
           name: r.name,
           model: r.model,
           mac: r.mac_address,
           ip: r.ip_address,
           has_connection: !!r.linked_mikrotik_connection_id,
-        };
-      }
+        },
+      });
     }
 
-    res.json({
-      connected: true,
-      status: "online",
-      message: "Router connected",
-      lastSeen: log.created_at,
-      ip: log.ip_address,
-      lastAction: log.action,
-      router,
-      has_credentials: details.has_credentials || false,
-      connection_id: details.connection_id || null,
+    // FALLBACK: Check provision_logs by token prefix
+    const logResult = await db.query(
+      "SELECT action, status, ip_address, router_id, created_at, details FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
+      [tokenPrefix],
+    );
+
+    if (logResult.rows.length > 0) {
+      const log = logResult.rows[0];
+      let details = {};
+      try { details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {}); } catch(e) {}
+
+      let router = null;
+      if (log.router_id) {
+        const rResult = await db.query(
+          "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
+          [log.router_id],
+        );
+        if (rResult.rows.length > 0) {
+          const r = rResult.rows[0];
+          router = { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id };
+        }
+      }
+
+      return res.json({
+        connected: true,
+        status: "online",
+        message: "Router connected (log fallback)",
+        lastSeen: log.created_at,
+        ip: log.ip_address,
+        lastAction: log.action,
+        router,
+        has_credentials: details.has_credentials || false,
+        connection_id: details.connection_id || null,
+      });
+    }
+
+    // FALLBACK: Check routers by MAC in provision_logs
+    const macResult = await db.query(
+      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) LIMIT 1",
+      [tokenPrefix],
+    );
+
+    if (macResult.rows.length > 0) {
+      const r = macResult.rows[0];
+      return res.json({
+        connected: true,
+        status: "online",
+        message: "Router found (MAC fallback)",
+        router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+      });
+    }
+
+    return res.json({
+      connected: false,
+      status: "waiting",
+      message: "Awaiting router connection... Run the command on your MikroTik.",
+      hint: "Make sure the MikroTik can reach this server. The script reports back after running.",
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
