@@ -59,6 +59,8 @@ export default function RouterLink() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [lastError, setLastError] = useState(null);
   const [checkCount, setCheckCount] = useState(0);
+  const [manualKey, setManualKey] = useState("");
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     fetchTenant();
@@ -178,19 +180,23 @@ export default function RouterLink() {
     }
   };
 
-  const checkConnection = async () => {
+  const checkConnection = async (keyOverride) => {
+    const key = keyOverride || apiKey;
+    if (!key) return null;
     try {
-      const { data } = await axios.get(API + "/router/v1/status", {
-        headers: { Authorization: "Bearer " + apiKey },
+      const url = `${API}/router/v1/status?t=${Date.now()}`;
+      const { data } = await axios.get(url, {
+        headers: { Authorization: "Bearer " + key },
       });
       setConnectionStatus(data);
+      setDebugInfo({ key: key.substring(0, 16) + "...", url, response: data });
       setLastError(null);
       setCheckCount((c) => c + 1);
       return data;
     } catch (e) {
       const msg = e.response?.data?.error || e.message;
-      console.error("[RouterLink] Status check failed:", msg, e.response?.status);
       setLastError(`${msg} (HTTP ${e.response?.status || "network error"})`);
+      setDebugInfo({ key: (keyOverride || apiKey).substring(0, 16) + "...", error: msg, status: e.response?.status });
       return null;
     }
   };
@@ -559,17 +565,53 @@ export default function RouterLink() {
                     <div>
                       <p className="text-sm text-red-300 font-medium">API Key Mismatch</p>
                       <p className="text-xs text-red-400/70 mt-1">
-                        The API key on this page doesn't match what's stored on the server. This happens if you generated a key, left the page, and came back without it being saved.
+                        The key on this page doesn't match what the MikroTik is using. Paste the key from your command below.
                       </p>
                     </div>
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Click below to generate a new key and re-run the command on your MikroTik.
+                  <input
+                    type="text"
+                    value={manualKey}
+                    onChange={(e) => setManualKey(e.target.value)}
+                    placeholder="Paste the API key from your MikroTik command here..."
+                    className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-amber-400 font-mono focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => checkConnection(manualKey)}
+                      disabled={!manualKey}
+                      className="gap-2 flex-1"
+                    >
+                      Try This Key
+                    </Button>
+                    <Button
+                      onClick={generateKey}
+                      disabled={generating}
+                      variant="outline"
+                      className="gap-2 border-zinc-700/50 text-zinc-300"
+                    >
+                      {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                      New Key
+                    </Button>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    After trying the correct key, click "Save as API Key" to store it.
                   </p>
-                  <Button onClick={generateKey} disabled={generating} className="gap-2 w-full">
-                    {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-                    Generate New API Key
-                  </Button>
+                  {connectionStatus?.connected && (
+                    <Button
+                      onClick={async () => {
+                        setApiKey(manualKey);
+                        localStorage.setItem("router_link_api_key", manualKey);
+                        try {
+                          await axios.put(`${API}/tenants/${tenantId}/api-key`, { api_key: manualKey }, { headers: { Authorization: `Bearer ${getToken()}` } });
+                          toast.success("Key saved!");
+                        } catch(e) { toast.error("Saved locally only"); }
+                      }}
+                      className="gap-2 w-full bg-green-500 hover:bg-green-600 text-black"
+                    >
+                      <Check className="w-4 h-4" /> Save as API Key
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -609,6 +651,16 @@ export default function RouterLink() {
                   Router fully linked and managed! You can now sync PPPoE, push scripts, and monitor this router.
                 </span>
               </div>
+            )}
+
+            {/* Debug info */}
+            {debugInfo && (
+              <details className="mt-3">
+                <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400">Debug</summary>
+                <pre className="mt-2 bg-zinc-950 border border-zinc-800 rounded-lg p-2 text-xs text-zinc-400 font-mono overflow-x-auto">
+                  {JSON.stringify(debugInfo, null, 2)}
+                </pre>
+              </details>
             )}
           </CardContent>
         </Card>
