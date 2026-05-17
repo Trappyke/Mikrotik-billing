@@ -18,6 +18,10 @@ function getDb() {
   return global.db || memoryDb;
 }
 
+function getClientIp(req) {
+  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
+}
+
 function getServerBaseUrl(req, explicitBaseUrl) {
   return (
     explicitBaseUrl ||
@@ -1823,7 +1827,7 @@ router.get("/v1/scripts/install", async (req, res) => {
         [
           uuidv4(),
           apiKey.substring(0, 16),
-          req.ip,
+          getClientIp(req),
           "install_script_fetch",
           "success",
           tenant.name,
@@ -1873,7 +1877,7 @@ router.get("/v1/report", async (req, res) => {
         );
         const routerName =
           model || `Router-${(mac || "unknown").replace(/:/g, "-")}`;
-        const routerIp = req.ip || "unknown";
+        const routerIp = getClientIp(req);
 
         if (existingRouter.rows.length > 0) {
           routerId = existingRouter.rows[0].id;
@@ -1948,7 +1952,7 @@ router.get("/v1/report", async (req, res) => {
         uuidv4(),
         apiKey.substring(0, 16),
         routerId,
-        req.ip,
+        getClientIp(req),
         "router_scan",
         "success",
         JSON.stringify({ model, serial, version, mac, wg_pubkey, has_credentials: !!(mgmt_user && mgmt_pass), connection_id: connectionId }),
