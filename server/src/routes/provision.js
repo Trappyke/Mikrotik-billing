@@ -1972,7 +1972,7 @@ router.get("/v1/status", async (req, res) => {
     const tokenPrefix = apiKey.substring(0, 16);
     const db = getDb();
 
-    // Verify this API key belongs to a tenant
+    // Verify this API key belongs to a tenant (log warning but don't block - polling endpoint)
     let tenant = null;
     try {
       const tenantResult = await db.query(
@@ -1981,11 +1981,17 @@ router.get("/v1/status", async (req, res) => {
       );
       tenant = tenantResult.rows[0];
     } catch (e) {
-      tenant = null;
+      // Tenant table might not exist yet or query might fail in memory mode
     }
 
     if (!tenant) {
-      return res.status(403).json({ connected: false, error: "Invalid API key. Generate a new one from the Router Link page." });
+      // Key may not match what's stored - try the stored key from localStorage
+      return res.json({
+        connected: false,
+        status: "invalid_key",
+        message: "API key mismatch. The key on this page doesn't match what's stored on the server.",
+        hint: "Click 'Generate API Key' to create a new one, then re-run the command on your MikroTik.",
+      });
     }
 
     // Get the latest provision log

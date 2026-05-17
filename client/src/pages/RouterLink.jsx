@@ -31,7 +31,9 @@ const API = import.meta.env.VITE_API_URL || "/api";
 
 export default function RouterLink() {
   const toast = useToastStore();
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("router_link_api_key") || ""
+  );
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -73,10 +75,20 @@ export default function RouterLink() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTenantId(data.id);
-      if (data.settings?.api_key) {
-        setApiKey(data.settings.api_key);
+      const storedKey = localStorage.getItem("router_link_api_key");
+      const tenantKey = data.settings?.api_key;
+      // Prefer tenant key, fall back to localStorage, fall back to empty
+      const activeKey = tenantKey || storedKey || "";
+      if (activeKey && activeKey !== apiKey) {
+        setApiKey(activeKey);
+        localStorage.setItem("router_link_api_key", activeKey);
       }
     } catch (e) {
+      // If tenant fetch fails, try stored key
+      const storedKey = localStorage.getItem("router_link_api_key");
+      if (storedKey && !apiKey) {
+        setApiKey(storedKey);
+      }
       toast.error("Failed to load tenant");
     } finally {
       setLoading(false);
@@ -100,6 +112,7 @@ export default function RouterLink() {
         },
       );
       setApiKey(key);
+      localStorage.setItem("router_link_api_key", key);
       setPolling(true);
       toast.success("API key generated");
     } catch (e) {
@@ -428,9 +441,11 @@ export default function RouterLink() {
                     ? "bg-green-500 shadow-lg shadow-green-500/30"
                     : connectionStatus?.connected
                       ? "bg-green-500 animate-pulse"
-                      : polling
-                        ? "bg-amber-500 animate-pulse"
-                        : "bg-zinc-600"
+                      : connectionStatus?.status === "invalid_key"
+                        ? "bg-red-500"
+                        : polling
+                          ? "bg-amber-500 animate-pulse"
+                          : "bg-zinc-600"
                 }`}
               />
               <span className="text-sm text-zinc-300">
@@ -438,9 +453,11 @@ export default function RouterLink() {
                   ? "Fully Linked & Managed"
                   : connectionStatus?.connected
                     ? "Router Connected"
-                    : polling
-                      ? "Listening..."
-                      : "Not Monitoring"}
+                    : connectionStatus?.status === "invalid_key"
+                      ? "Key Mismatch"
+                      : polling
+                        ? "Listening..."
+                        : "Not Monitoring"}
               </span>
             </div>
 
@@ -533,8 +550,32 @@ export default function RouterLink() {
               </Card>
             )}
 
+            {/* Key mismatch state */}
+            {connectionStatus?.status === "invalid_key" && (
+              <Card className="bg-red-500/5 border-red-500/30">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm text-red-300 font-medium">API Key Mismatch</p>
+                      <p className="text-xs text-red-400/70 mt-1">
+                        The API key on this page doesn't match what's stored on the server. This happens if you generated a key, left the page, and came back without it being saved.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-400">
+                    Click below to generate a new key and re-run the command on your MikroTik.
+                  </p>
+                  <Button onClick={generateKey} disabled={generating} className="gap-2 w-full">
+                    {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                    Generate New API Key
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Waiting state */}
-            {polling && !connectionStatus?.connected && (
+            {polling && !connectionStatus?.connected && connectionStatus?.status !== "invalid_key" && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-amber-400">
                   <Loader2 className="w-5 h-5 animate-spin" />
