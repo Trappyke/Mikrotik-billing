@@ -1741,6 +1741,14 @@ router.get("/v1/scripts/install", async (req, res) => {
       "",
       `:put "[Billing] Starting router link..."`,
       "",
+      "# ── IMPORTANT: Set management credentials BEFORE running ──",
+      "# Run these commands on your router first to auto-create the API connection:",
+      '#   :global ztpMgmtUser "admin"',
+      '#   :global ztpMgmtPass "your-password"',
+      ":global ztpMgmtUser; :global ztpMgmtPass;",
+      ":local hasCreds [:len $ztpMgmtUser]",
+      `:if ($hasCreds > 0) do={ :log info "[Billing] Management credentials provided" } else={ :log info "[Billing] No management credentials set - add later via Router Link page" }`,
+      "",
       "# RADIUS",
       `:put "[Billing] Setting up RADIUS..."`,
       `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="Billing RADIUS" disabled=no; :put "[Billing] RADIUS configured" } on-error={ :put "[Billing] RADIUS skipped (unsupported or exists)" }`,
@@ -1781,6 +1789,12 @@ router.get("/v1/scripts/install", async (req, res) => {
     }
 
     scriptLines.push(
+      `:put "[Billing] Collecting management credentials..."`,
+      ":global ztpMgmtUser; :global ztpMgmtPass;",
+      ":local mgmtUser $ztpMgmtUser",
+      ":local mgmtPass $ztpMgmtPass",
+      ':if ([:len $mgmtUser] > 0) do={ :put "[Billing] Management user found: $mgmtUser" } else={ :log info "[Billing] No management credentials set - add later via Router Link page" }',
+      "",
       `:put "[Billing] Reporting to server..."`,
       ":local model [/system routerboard get model]",
       ":local serial [/system routerboard get serial-number]",
@@ -1788,6 +1802,8 @@ router.get("/v1/scripts/install", async (req, res) => {
       ":local mac [/interface ethernet get [find default-name=ether1] mac-address]",
       `:local url "${baseUrl}/api/router/v1/report?model=\$model&serial=\$serial&version=\$version&mac=\$mac"`,
       `:if ([:len \$wgPubKey] > 0) do={ :set url (\$url . "&wg_pubkey=" . \$wgPubKey) }`,
+      `:if ([:len \$mgmtUser] > 0) do={ :set url (\$url . "&mgmt_user=" . \$mgmtUser) }`,
+      `:if ([:len \$mgmtPass] > 0) do={ :set url (\$url . "&mgmt_pass=" . \$mgmtPass) }`,
       `:do { /tool fetch url=\$url http-header-field="Authorization: Bearer ${apiKey}" mode=${fetchMode} output=none } on-error={ :log warning "[Billing] Report failed" }`,
       "",
       "# Schedule auto-sync",
@@ -1828,7 +1844,7 @@ router.get("/v1/report", async (req, res) => {
       return res.status(401).json({ error: "Missing token" });
     }
     const apiKey = authHeader.split(" ")[1];
-    const { model, serial, version, mac, wg_pubkey } = req.query;
+    const { model, serial, version, mac, wg_pubkey, mgmt_user, mgmt_pass, mgmt_port } = req.query;
     const db = getDb();
 
     let tenant;
@@ -1851,7 +1867,7 @@ router.get("/v1/report", async (req, res) => {
         const projectId =
           projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
         const existingRouter = await db.query(
-          "SELECT id FROM routers WHERE mac_address = $1 LIMIT 1",
+          "SELECT * FROM routers WHERE mac_address = $1 LIMIT 1",
           [mac],
         );
         const routerName =
@@ -1884,6 +1900,47 @@ router.get("/v1/report", async (req, res) => {
       }
     }
 
+    // Create mikrotik_connection if management credentials were provided
+    let connectionId = null;
+    if (routerId && mgmt_user && mgmt_pass) {
+      try {
+        const activationResult = await zeroTouchBilling.ensureMikrotikConnection(
+          routerId,
+          {
+            mgmt_username: mgmt_user,
+            mgmt_password: mgmt_pass,
+            mgmt_port: mgmt_port ? parseInt(mgmt_port, 10) : 8728,
+            connection_type: "api",
+          },
+        );
+
+        if (activationResult?.connection?.id) {
+          connectionId = activationResult.connection.id;
+          await db.query(
+            "UPDATE routers SET linked_mikrotik_connection_id = $1, billing_activated_at = CURRENT_TIMESTAMP WHERE id = $2",
+            [connectionId, routerId],
+          );
+
+          // Also store credentials on the router record for future use
+          const encryption = require("../utils/encryption");
+          const encryptedPass = await encryption.encrypt(mgmt_pass);
+          await db.query(
+            "UPDATE routers SET mgmt_username = $1, mgmt_password_encrypted = $2, mgmt_port = $3 WHERE id = $4",
+            [mgmt_user, encryptedPass, mgmt_port ? parseInt(mgmt_port, 10) : 8728, routerId],
+          );
+
+          // Try to sync existing subscriptions for this tenant
+          try {
+            await zeroTouchBilling.activateRouterInBilling(routerId);
+          } catch (syncErr) {
+            console.error("Failed to sync subscriptions:", syncErr.message);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to create connection from router link:", e.message);
+      }
+    }
+
     await db.query(
       "INSERT INTO provision_logs (id, token, router_id, ip_address, action, status, details) VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [
@@ -1893,11 +1950,11 @@ router.get("/v1/report", async (req, res) => {
         req.ip,
         "router_scan",
         "success",
-        JSON.stringify({ model, serial, version, mac, wg_pubkey }),
+        JSON.stringify({ model, serial, version, mac, wg_pubkey, has_credentials: !!(mgmt_user && mgmt_pass), connection_id: connectionId }),
       ],
     );
 
-    res.json({ success: true, router_id: routerId });
+    res.json({ success: true, router_id: routerId, connection_id: connectionId, linked: !!connectionId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1912,18 +1969,68 @@ router.get("/v1/status", async (req, res) => {
     }
     const apiKey = authHeader.split(" ")[1];
     const db = getDb();
-    const result = await db.query(
-      "SELECT action, status, ip_address, created_at FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
+
+    // Get the latest provision log
+    const logResult = await db.query(
+      "SELECT action, status, ip_address, router_id, created_at, details FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
       [apiKey.substring(0, 16)],
     );
-    if (result.rows.length === 0) {
+
+    if (logResult.rows.length === 0) {
+      // Check if there's any router with this provision status
+      const routerResult = await db.query(
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE provision_token IN (SELECT token FROM provision_logs WHERE token = $1) OR mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) LIMIT 1",
+        [apiKey.substring(0, 16)],
+      );
+
+      if (routerResult.rows.length > 0) {
+        const r = routerResult.rows[0];
+        return res.json({
+          connected: true,
+          status: r.provision_status || "online",
+          message: "Router found",
+          router: {
+            id: r.id,
+            name: r.name,
+            model: r.model,
+            mac: r.mac_address,
+            ip: r.ip_address,
+            has_connection: !!r.linked_mikrotik_connection_id,
+          },
+        });
+      }
+
       return res.json({
         connected: false,
         status: "waiting",
         message: "Awaiting router connection...",
       });
     }
-    const log = result.rows[0];
+
+    const log = logResult.rows[0];
+    let details = {};
+    try { details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {}); } catch(e) {}
+
+    // If we have a router_id, get the full router info
+    let router = null;
+    if (log.router_id) {
+      const routerResult = await db.query(
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
+        [log.router_id],
+      );
+      if (routerResult.rows.length > 0) {
+        const r = routerResult.rows[0];
+        router = {
+          id: r.id,
+          name: r.name,
+          model: r.model,
+          mac: r.mac_address,
+          ip: r.ip_address,
+          has_connection: !!r.linked_mikrotik_connection_id,
+        };
+      }
+    }
+
     res.json({
       connected: true,
       status: "online",
@@ -1931,6 +2038,89 @@ router.get("/v1/status", async (req, res) => {
       lastSeen: log.created_at,
       ip: log.ip_address,
       lastAction: log.action,
+      router,
+      has_credentials: details.has_credentials || false,
+      connection_id: details.connection_id || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /v1/upgrade — Add management credentials to an existing router link
+router.put("/v1/upgrade", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing token" });
+    }
+    const apiKey = authHeader.split(" ")[1];
+    const { mac, username, password, port, connection_type } = req.body;
+
+    if (!mac || !username || !password) {
+      return res.status(400).json({ error: "mac, username, and password are required" });
+    }
+
+    const db = getDb();
+
+    // Verify the tenant owns this router
+    const tenantResult = await db.query(
+      "SELECT * FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
+      [apiKey],
+    );
+    if (tenantResult.rows.length === 0) {
+      return res.status(403).json({ error: "Invalid API key" });
+    }
+
+    // Find the router
+    const routerResult = await db.query(
+      "SELECT * FROM routers WHERE mac_address = $1 LIMIT 1",
+      [mac],
+    );
+    if (routerResult.rows.length === 0) {
+      return res.status(404).json({ error: "Router not found. Make sure the router has reported in first." });
+    }
+
+    const router = routerResult.rows[0];
+
+    // Encrypt the password
+    const encryption = require("../utils/encryption");
+    const encryptedPass = await encryption.encrypt(password);
+
+    // Create the mikrotik_connection
+    const activationResult = await zeroTouchBilling.ensureMikrotikConnection(
+      router.id,
+      {
+        mgmt_username: username,
+        mgmt_password: password,
+        mgmt_port: port ? parseInt(port, 10) : 8728,
+        connection_type: connection_type || "api",
+      },
+    );
+
+    const connectionId = activationResult?.connection?.id;
+    if (!connectionId) {
+      throw new Error(activationResult?.error || "Failed to create MikroTik connection");
+    }
+
+    // Link and store credentials
+    await db.query(
+      "UPDATE routers SET linked_mikrotik_connection_id = $1, mgmt_username = $2, mgmt_password_encrypted = $3, mgmt_port = $4, billing_activated_at = CURRENT_TIMESTAMP WHERE id = $5",
+      [connectionId, username, encryptedPass, port || 8728, router.id],
+    );
+
+    // Try to sync subscriptions
+    try {
+      await zeroTouchBilling.activateRouterInBilling(router.id);
+    } catch (syncErr) {
+      console.error("Failed to sync subscriptions on upgrade:", syncErr.message);
+    }
+
+    res.json({
+      success: true,
+      router_id: router.id,
+      connection_id: connectionId,
+      name: router.name,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
