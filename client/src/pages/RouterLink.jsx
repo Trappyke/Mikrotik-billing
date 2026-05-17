@@ -62,6 +62,7 @@ export default function RouterLink() {
   const [checkCount, setCheckCount] = useState(0);
   const [manualKey, setManualKey] = useState("");
   const [debugInfo, setDebugInfo] = useState(null);
+  const [allRouters, setAllRouters] = useState([]);
 
   useEffect(() => {
     fetchTenant();
@@ -196,12 +197,26 @@ export default function RouterLink() {
       setDebugInfo({ key: key.substring(0, 16) + "...", url, response: data });
       setLastError(null);
       setCheckCount((c) => c + 1);
+
+      // Also fetch ALL routers for this tenant
+      fetchAllRouters();
+
       return data;
     } catch (e) {
       const msg = e.response?.data?.error || e.message;
       setLastError(`${msg} (HTTP ${e.response?.status || "network error"})`);
       setDebugInfo({ key: (keyOverride || apiKey).substring(0, 16) + "...", error: msg, status: e.response?.status });
       return null;
+    }
+  };
+
+  const fetchAllRouters = async () => {
+    if (!tenantSlug) return;
+    try {
+      const { data } = await axios.get(`${API}/router/v1/${tenantSlug}/routers`);
+      setAllRouters(data.by_tenant_id || []);
+    } catch (e) {
+      // silent
     }
   };
 
@@ -665,6 +680,39 @@ export default function RouterLink() {
                   {JSON.stringify(debugInfo, null, 2)}
                 </pre>
               </details>
+            )}
+
+            {/* All Routers for this tenant */}
+            {allRouters.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-zinc-800/50">
+                <p className="text-xs text-zinc-500 mb-2 font-medium">ALL ROUTERS ({allRouters.length})</p>
+                <div className="space-y-2">
+                  {allRouters.map((r) => (
+                    <div key={r.id} className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className={`w-2 h-2 rounded-full ${r.provision_status === 'online' ? 'bg-green-500' : 'bg-zinc-500'}`} />
+                        <span className="text-white">{r.name}</span>
+                        <span className="text-zinc-500">{r.model || ""}</span>
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        <span>{r.mac_address || "no MAC"}</span>
+                        <span className="mx-2">|</span>
+                        <span>{r.ip_address || "no IP"}</span>
+                        <span className="mx-2">|</span>
+                        <span className={r.linked_mikrotik_connection_id ? "text-green-400" : "text-amber-400"}>
+                          {r.linked_mikrotik_connection_id ? "managed" : "unmanaged"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {allRouters.length === 0 && checkCount > 1 && (
+              <p className="text-xs text-zinc-600 text-center py-2">
+                No routers found in database for this tenant.
+              </p>
             )}
           </CardContent>
         </Card>

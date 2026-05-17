@@ -1920,7 +1920,8 @@ router.get("/v1/:slug/install", async (req, res) => {
       "# Report back",
       ':put "[Billing] Reporting to server..."',
       ":local model; :do { :set model [/system routerboard get model] } on-error={}",
-      ":local mac; :do { :set mac [/interface ethernet get [find default-name=ether1] mac-address] } on-error={}",
+      "# Get MAC from first ethernet interface (try ether1, fallback to any)",
+      ":local mac; :do { :set mac [/interface ethernet get [find default-name=ether1] mac-address] } on-error={:do { :set mac [/interface ethernet get ([find]->0) mac-address] } on-error={} }",
       ":local reportUrl \"" + baseUrl + "/api/router/v1/" + slug + "/report?model=$model&mac=$mac\"",
       ":local mgmtUser $ztpMgmtUser; :local mgmtPass $ztpMgmtPass",
       ":if ([:len $mgmtUser] > 0) do={ :set reportUrl ($reportUrl . \"&mgmt_user=$mgmtUser\") }",
@@ -1956,32 +1957,39 @@ router.get("/v1/:slug/report", async (req, res) => {
     }
 
     let routerId = null;
-    if (mac) {
-      try {
-        const projectResult = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1");
-        const projectId = projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
-        const existingRouter = await db.query("SELECT id FROM routers WHERE mac_address = $1 LIMIT 1", [mac]);
-        const routerName = model || `Router-${(mac || "unknown").replace(/:/g, "-")}`;
-        const routerIp = getClientIp(req);
+    const routerIp = getClientIp(req);
+    const routerIdentifier = mac || `ip-${routerIp.replace(/[.:]/g, "-")}`;
 
-        if (existingRouter.rows.length > 0) {
-          routerId = existingRouter.rows[0].id;
-          await db.query(
-            "UPDATE routers SET model = COALESCE(NULLIF($1, ''), model), ip_address = $2, provision_status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $3",
-            [model, routerIp, routerId],
-          );
-          try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
-        } else {
-          const newRouter = await db.query(
-            "INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, provision_status) VALUES ($1,$2,$3,$4,$5,$6,'online') RETURNING id",
-            [projectId, routerName, routerName, model, mac, routerIp],
-          );
-          routerId = newRouter.rows[0].id;
-          try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
-        }
-      } catch (e) {
-        console.error("Failed to upsert router:", e.message);
+    try {
+      let existingRouter = null;
+      if (mac) {
+        existingRouter = await db.query("SELECT id FROM routers WHERE mac_address = $1 LIMIT 1", [mac]);
       }
+      if (!existingRouter || existingRouter.rows.length === 0) {
+        existingRouter = await db.query("SELECT id FROM routers WHERE ip_address = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1", [routerIp]);
+      }
+
+      const projectResult = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1");
+      const projectId = projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
+      const routerName = model || `Router-${routerIdentifier}`;
+
+      if (existingRouter && existingRouter.rows.length > 0) {
+        routerId = existingRouter.rows[0].id;
+        await db.query(
+          "UPDATE routers SET model = COALESCE(NULLIF($1, ''), model), ip_address = $2, provision_status = 'online', mac_address = COALESCE(NULLIF($4, ''), mac_address), updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+          [model, routerIp, routerId, mac || null],
+        );
+        try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
+      } else {
+        const newRouter = await db.query(
+          "INSERT INTO routers (project_id, name, identity, model, mac_address, ip_address, provision_status) VALUES ($1,$2,$3,$4,$5,$6,'online') RETURNING id",
+          [projectId, routerName, routerName, model || "Unknown", mac || null, routerIp],
+        );
+        routerId = newRouter.rows[0].id;
+        try { await db.query("UPDATE routers SET tenant_id = $1 WHERE id = $2", [tenant.id, routerId]); } catch(colErr) {}
+      }
+    } catch (e) {
+      console.error("Failed to upsert router:", e.message);
     }
 
     // Create mikrotik_connection if credentials provided
@@ -2025,11 +2033,9 @@ router.get("/v1/:slug/report", async (req, res) => {
 router.get("/v1/:slug/status", async (req, res) => {
   try {
     const { slug } = req.params;
-    const authHeader = req.headers.authorization;
-    const apiKey = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1] : "";
     const db = getDb();
 
-    const tenant = await findTenantBySlugOrKey(slug, apiKey);
+    const tenant = await findTenantBySlugOrKey(slug, null);
     if (!tenant) {
       return res.json({ connected: false, status: "invalid_tenant", message: "Tenant not found. Check your URL." });
     }
@@ -2052,6 +2058,28 @@ router.get("/v1/:slug/status", async (req, res) => {
       });
     }
 
+    // Fallback: find ANY router for this tenant (even without tenant_id set, via provision_logs)
+    const logResult = await db.query(
+      "SELECT router_id, created_at FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+      [slug.substring(0, 16)],
+    );
+    if (logResult.rows.length > 0 && logResult.rows[0].router_id) {
+      const rResult = await db.query(
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
+        [logResult.rows[0].router_id],
+      );
+      if (rResult.rows.length > 0) {
+        const r = rResult.rows[0];
+        return res.json({
+          connected: true,
+          status: "online",
+          message: "Router found via logs",
+          lastSeen: logResult.rows[0].created_at,
+          router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+        });
+      }
+    }
+
     return res.json({
       connected: false,
       status: "waiting",
@@ -2059,6 +2087,38 @@ router.get("/v1/:slug/status", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /v1/:slug/routers — List all routers for this tenant (diagnostic)
+router.get("/v1/:slug/routers", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const db = getDb();
+    const tenant = await findTenantBySlugOrKey(slug, null);
+    if (!tenant) {
+      return res.json({ error: "Tenant not found", routers: [] });
+    }
+
+    // Get routers by tenant_id
+    const byTenant = await db.query(
+      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, tenant_id, created_at, updated_at FROM routers WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 20",
+      [tenant.id],
+    );
+
+    // Also check provision_logs for any router IDs linked to this slug
+    const byLogs = await db.query(
+      "SELECT DISTINCT router_id FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL",
+      [slug.substring(0, 16)],
+    );
+
+    res.json({
+      tenant: { id: tenant.id, name: tenant.name, slug },
+      by_tenant_id: byTenant.rows,
+      router_ids_from_logs: byLogs.rows.map(r => r.router_id),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message, routers: [] });
   }
 });
 
