@@ -1,0 +1,89 @@
+{
+  "id": "fe2ec188-1a31-47b8-b197-f360bd0e9618",
+  "title": "can you analyse my project?",
+  "model": "deepseek/deepseek-v4-pro",
+  "mode": "agent",
+  "tool_use": "agent",
+  "messages": [
+    {
+      "message_id": "99995874-364e-4db5-9ac1-9087233717d3",
+      "role": "system",
+      "content": "You are Refact Agent working with an open-source or local model.\n\nTool-calling rules:\n- Prefer native tool calling whenever available.\n- Call at most one tool at a time unless the runtime explicitly supports parallel tool calls.\n- Do not mix prose with a tool call when a tool is needed.\n- After a tool result arrives, either call the next tool or answer plainly.\n- Use exact tool names and valid JSON arguments only.\n- Use absolute paths when a tool accepts file paths.\n"
+    },
+    {
+      "message_id": "28758f93-f75e-4ce5-9199-7736821493fb",
+      "role": "user",
+      "content": "can you analyse my project?\n",
+      "checkpoints": [
+        {
+          "workspace_folder": "C:\\Users\\ike\\Documents\\MIKROTIK SCRIPT GEN",
+          "commit_hash": "2aadd72d76da420f5f4a4646f928720619849e58"
+        }
+      ]
+    },
+    {
+      "message_id": "083d6c48-8ffa-40af-847e-df2e4514f4a3",
+      "role": "assistant",
+      "content": "I'd be happy to analyze your project! Let me start by exploring the structure and key files.",
+      "finish_reason": "tool_calls",
+      "reasoning_content": "The user is asking me to analyze their project. Let me start by exploring the project structure to understand what we're working with. I'll use the tree tool to get an overview of the files and then dig deeper into key files.",
+      "tool_calls": [
+        {
+          "id": "call_00_xAKfvZPyPWg467mmcj2w0699",
+          "index": 0,
+          "function": {
+            "arguments": "{\"path\": \"/data/workspace/isaac-t1/data\"}",
+            "name": "tree"
+          },
+          "type": "function"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 119,
+        "total_tokens": 8829,
+        "cache_creation_input_tokens": 8710,
+        "metering_usd": {
+          "prompt_usd": 0.0,
+          "generated_usd": 0.00041412,
+          "total_usd": 0.00041412
+        }
+      },
+      "thinking_blocks": [
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "The user is asking me to analyze their project. Let me start by exploring the project structure to understand what we're working with. I'll use the tree tool to get an overview of the files and then dig deeper into key files."
+            }
+          ]
+        }
+      ],
+      "system_fingerprint": "fp_9954b31ca7_prod0820_fp8_kvcache_20260402"
+    },
+    {
+      "message_id": "7e4dbd5b-0be1-4455-9feb-a3c5b1b3d4d7",
+      "role": "tool",
+      "content": "Error: The path \"/data/workspace/isaac-t1/data\" does not exist. There are no similar names either.",
+      "tool_call_id": "call_00_xAKfvZPyPWg467mmcj2w0699",
+      "tool_failed": true
+    },
+    {
+      "message_id": "3e724410-3a61-46d3-9985-3dc45600ba9a",
+      "role": "error",
+      "content": "LLM error (400 Bad Request): \"The `reasoning_content` in the thinking mode must be passed back to the API.\""
+    }
+  ],
+  "created_at": "2026-05-15T13:00:33.449519500+00:00",
+  "boost_reasoning": false,
+  "checkpoints_enabled": true,
+  "context_tokens_cap": null,
+  "include_project_info": true,
+  "isTitleGenerated": true,
+  "auto_approve_editing_tools": true,
+  "auto_approve_dangerous_commands": false,
+  "auto_enrichment_enabled": false,
+  "root_chat_id": "fe2ec188-1a31-47b8-b197-f360bd0e9618",
+  "updated_at": "2026-05-15T13:01:02.888883900+00:00"
+}

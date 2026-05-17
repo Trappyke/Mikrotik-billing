@@ -1,0 +1,132 @@
+{
+  "id": "dab19cad-1265-4eda-802c-1e78d705aaf7",
+  "title": "hi",
+  "model": "deepseek/deepseek-v4-pro",
+  "mode": "agent",
+  "tool_use": "agent",
+  "messages": [
+    {
+      "message_id": "024606fd-817f-4c47-a07f-339764406ea1",
+      "role": "system",
+      "content": "You are Refact Agent working with an open-source or local model.\n\nTool-calling rules:\n- Prefer native tool calling whenever available.\n- Call at most one tool at a time unless the runtime explicitly supports parallel tool calls.\n- Do not mix prose with a tool call when a tool is needed.\n- After a tool result arrives, either call the next tool or answer plainly.\n- Use exact tool names and valid JSON arguments only.\n- Use absolute paths when a tool accepts file paths.\n"
+    },
+    {
+      "message_id": "09fecba4-3e7f-41a0-9981-60feba8ef583",
+      "role": "user",
+      "content": "hi\n",
+      "checkpoints": [
+        {
+          "workspace_folder": "C:\\Users\\ike\\Documents\\MIKROTIK SCRIPT GEN",
+          "commit_hash": "4fd420dcd4b1793c44d7ef8627bed8bce92a9f99"
+        }
+      ]
+    },
+    {
+      "message_id": "9d48cce1-91f6-48a4-8dcc-06744d2f3ca9",
+      "role": "assistant",
+      "content": "Hi! How can I help you today? Are you working on something specific, or would you like me to explore the project with you?",
+      "finish_reason": "stop",
+      "reasoning_content": "The user just said \"hi\". Let me understand the project context first before responding. Let me look at the workspace structure to understand what we're working with.",
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 61,
+        "total_tokens": 8767,
+        "cache_creation_input_tokens": 8706,
+        "metering_usd": {
+          "prompt_usd": 0.0,
+          "generated_usd": 0.00021228,
+          "total_usd": 0.00021228
+        }
+      },
+      "thinking_blocks": [
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "The user just said \"hi\". Let me understand the project context first before responding. Let me look at the workspace structure to understand what we're working with."
+            }
+          ]
+        }
+      ],
+      "system_fingerprint": "fp_9954b31ca7_prod0820_fp8_kvcache_20260402"
+    },
+    {
+      "message_id": "2126f88f-3e26-4bbe-b8a9-3c9391df98ac",
+      "role": "user",
+      "content": "can you analyse my project?\n",
+      "checkpoints": [
+        {
+          "workspace_folder": "C:\\Users\\ike\\Documents\\MIKROTIK SCRIPT GEN",
+          "commit_hash": "f4f8164a7b0fb4ae3a452a7ee6934ced9c5df1c6"
+        }
+      ]
+    },
+    {
+      "message_id": "dcc665fa-99e6-46ed-b86e-8a96aedc323c",
+      "role": "assistant",
+      "content": "Of course! Let me start by getting an overview of your project structure and checking for existing knowledge.",
+      "finish_reason": "tool_calls",
+      "reasoning_content": "The user is asking me to analyze their project. Let me start by getting an overview of the project structure using the tree tool, and also check if there's any existing project configuration or knowledge base.",
+      "tool_calls": [
+        {
+          "id": "call_00_AeRXjysybJmS6JprqYA47019",
+          "index": 0,
+          "function": {
+            "arguments": "{\"path\": \"/home/user\", \"max_files\": 10}",
+            "name": "tree"
+          },
+          "type": "function"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 121,
+        "total_tokens": 8865,
+        "cache_creation_input_tokens": 40,
+        "cache_read_input_tokens": 8704,
+        "metering_usd": {
+          "prompt_usd": 0.0,
+          "generated_usd": 0.00042108,
+          "cache_read_usd": 0.0012620799999999998,
+          "total_usd": 0.00168316
+        }
+      },
+      "thinking_blocks": [
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "The user is asking me to analyze their project. Let me start by getting an overview of the project structure using the tree tool, and also check if there's any existing project configuration or knowledge base."
+            }
+          ]
+        }
+      ],
+      "system_fingerprint": "fp_9954b31ca7_prod0820_fp8_kvcache_20260402"
+    },
+    {
+      "message_id": "5733b6b5-3cd3-4926-97d9-b99af2678ee0",
+      "role": "tool",
+      "content": "Error: The path \"/home/user\" does not exist. There are no similar names either.",
+      "tool_call_id": "call_00_AeRXjysybJmS6JprqYA47019",
+      "tool_failed": true
+    },
+    {
+      "message_id": "aa0edc06-2ff7-4cbb-9a3d-f25101fb82a2",
+      "role": "error",
+      "content": "LLM error (400 Bad Request): \"The `reasoning_content` in the thinking mode must be passed back to the API.\""
+    }
+  ],
+  "created_at": "2026-05-15T12:58:16.170472500+00:00",
+  "boost_reasoning": false,
+  "checkpoints_enabled": true,
+  "context_tokens_cap": null,
+  "include_project_info": true,
+  "isTitleGenerated": true,
+  "auto_approve_editing_tools": true,
+  "auto_approve_dangerous_commands": false,
+  "auto_enrichment_enabled": false,
+  "root_chat_id": "dab19cad-1265-4eda-802c-1e78d705aaf7",
+  "updated_at": "2026-05-15T13:01:33.768220300+00:00"
+}

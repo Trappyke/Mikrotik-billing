@@ -2033,21 +2033,14 @@ router.get("/v1/:slug/report", async (req, res) => {
 router.get("/v1/:slug/status", async (req, res) => {
   try {
     const { slug } = req.params;
-    const db = getDb();
-
     const tenant = await findTenantBySlugOrKey(slug, null);
     if (!tenant) {
-      return res.json({ connected: false, status: "invalid_tenant", message: "Tenant not found. Check your URL." });
+      return res.json({ connected: false, status: "invalid_tenant", message: "Tenant not found." });
     }
 
-    // Primary: find router by tenant_id
-    const routerResult = await db.query(
-      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1",
-      [tenant.id],
-    );
-
-    if (routerResult.rows.length > 0) {
-      const r = routerResult.rows[0];
+    const routers = await findRoutersByTenant(tenant.id, slug);
+    if (routers.length > 0) {
+      const r = routers[0];
       return res.json({
         connected: true,
         status: "online",
@@ -2058,33 +2051,7 @@ router.get("/v1/:slug/status", async (req, res) => {
       });
     }
 
-    // Fallback: find ANY router for this tenant (even without tenant_id set, via provision_logs)
-    const logResult = await db.query(
-      "SELECT router_id, created_at FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",
-      [slug.substring(0, 16)],
-    );
-    if (logResult.rows.length > 0 && logResult.rows[0].router_id) {
-      const rResult = await db.query(
-        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
-        [logResult.rows[0].router_id],
-      );
-      if (rResult.rows.length > 0) {
-        const r = rResult.rows[0];
-        return res.json({
-          connected: true,
-          status: "online",
-          message: "Router found via logs",
-          lastSeen: logResult.rows[0].created_at,
-          router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
-        });
-      }
-    }
-
-    return res.json({
-      connected: false,
-      status: "waiting",
-      message: "Awaiting router connection... Run the command on your MikroTik.",
-    });
+    return res.json({ connected: false, status: "waiting", message: "Awaiting router connection..." });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2094,33 +2061,118 @@ router.get("/v1/:slug/status", async (req, res) => {
 router.get("/v1/:slug/routers", async (req, res) => {
   try {
     const { slug } = req.params;
-    const db = getDb();
     const tenant = await findTenantBySlugOrKey(slug, null);
     if (!tenant) {
       return res.json({ error: "Tenant not found", routers: [] });
     }
 
-    const byTenant = await db.query(
-      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, tenant_id, created_at, updated_at FROM routers WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 20",
-      [tenant.id],
-    );
-
-    const byLogs = await db.query(
-      "SELECT DISTINCT router_id FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL",
-      [slug.substring(0, 16)],
-    );
-
+    const routers = await findRoutersByTenant(tenant.id, slug);
     res.json({
       tenant: { id: tenant.id, name: tenant.name, slug },
-      by_tenant_id: byTenant.rows,
-      router_ids_from_logs: byLogs.rows.map(r => r.router_id),
+      routers,
     });
   } catch (error) {
     res.status(500).json({ error: error.message, routers: [] });
   }
 });
 
-// GET /v1/:slug/watch — SSE stream that watches for router discovery
+// In-memory watch sessions
+const watchSessions = new Map();
+
+async function findRoutersByTenant(tenantId, slug) {
+  const db = getDb();
+  // Try tenant_id first
+  try {
+    const result = await db.query(
+      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC",
+      [tenantId],
+    );
+    if (result.rows.length > 0) return result.rows;
+  } catch (e) {
+    // tenant_id column might not exist
+  }
+  // Fallback: find by provision_logs token
+  try {
+    const logResult = await db.query(
+      "SELECT DISTINCT router_id FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL ORDER BY router_id DESC LIMIT 20",
+      [(slug || "").substring(0, 16)],
+    );
+    const ids = logResult.rows.map(r => r.router_id).filter(Boolean);
+    if (ids.length > 0) {
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+      const result = await db.query(
+        `SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE id IN (${placeholders}) ORDER BY updated_at DESC`,
+        ids,
+      );
+      return result.rows;
+    }
+  } catch (e) {
+    // provision_logs might not exist either
+  }
+  return [];
+}
+
+// POST /v1/:slug/watch/start — Create a watch session
+router.post("/v1/:slug/watch/start", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const tenant = await findTenantBySlugOrKey(slug, null);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+    const sessionId = uuidv4();
+    watchSessions.set(sessionId, {
+      tenantId: tenant.id,
+      slug,
+      startedAt: Date.now(),
+      found: false,
+      router: null,
+    });
+
+    // Auto-cleanup after 10 minutes
+    setTimeout(() => watchSessions.delete(sessionId), 10 * 60 * 1000);
+
+    res.json({ sessionId, slug, message: "Watch session started" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /v1/:slug/watch/:sessionId — Poll watch session
+router.get("/v1/:slug/watch/:sessionId", async (req, res) => {
+  try {
+    const { slug, sessionId } = req.params;
+    const session = watchSessions.get(sessionId);
+
+    if (!session) {
+      return res.json({ found: false, expired: true, message: "Session expired" });
+    }
+
+    if (session.found) {
+      return res.json({ found: true, router: session.router, message: "Router discovered!" });
+    }
+
+    const tenant = await findTenantBySlugOrKey(slug, null);
+    if (!tenant) {
+      return res.json({ found: false, message: "Tenant not found" });
+    }
+
+    const routers = await findRoutersByTenant(tenant.id, slug);
+    if (routers.length > 0) {
+      const r = routers[0];
+      const router = { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id };
+      session.found = true;
+      session.router = router;
+      return res.json({ found: true, router, message: `Router ${r.name} discovered!` });
+    }
+
+    const elapsed = Math.floor((Date.now() - session.startedAt) / 1000);
+    res.json({ found: false, elapsed, message: `Watching... (${elapsed}s)` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /v1/:slug/watch — SSE stream (legacy, may not work on Render)
 router.get("/v1/:slug/watch", async (req, res) => {
   const { slug } = req.params;
   const db = getDb();

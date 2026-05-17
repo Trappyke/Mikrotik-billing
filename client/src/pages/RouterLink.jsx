@@ -65,10 +65,56 @@ export default function RouterLink() {
   const [allRouters, setAllRouters] = useState([]);
   const [watchAttempts, setWatchAttempts] = useState(0);
   const [watchRemaining, setWatchRemaining] = useState(0);
-  const eventSourceRef = React.useRef(null);
+  const watchIntervalRef = React.useRef(null);
+
+  const startWatching = async () => {
+    if (!tenantSlug) return;
+    stopWatching();
+
+    try {
+      const { data } = await axios.post(`${API}/router/v1/${tenantSlug}/watch/start`);
+      const { sessionId } = data;
+      setConnectionStatus({ connected: false, status: "watching", message: "Watch session started" });
+      setWatchAttempts(0);
+      setLastError(null);
+
+      const poll = async () => {
+        try {
+          const { data } = await axios.get(`${API}/router/v1/${tenantSlug}/watch/${sessionId}`);
+          setWatchAttempts((c) => c + 1);
+
+          if (data.found) {
+            stopWatching();
+            setConnectionStatus({ connected: true, status: "online", router: data.router, message: data.message });
+            fetchAllRouters();
+            toast.success(data.message);
+          } else if (data.expired) {
+            stopWatching();
+            setConnectionStatus({ connected: false, status: "timeout", message: data.message });
+          } else {
+            setWatchRemaining(Math.max(0, 600 - (data.elapsed || 0)));
+          }
+        } catch (e) {
+          // silent retry
+        }
+      };
+
+      poll();
+      watchIntervalRef.current = setInterval(poll, 3000);
+    } catch (e) {
+      setLastError("Failed to start watch session: " + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const stopWatching = () => {
+    if (watchIntervalRef.current) {
+      clearInterval(watchIntervalRef.current);
+      watchIntervalRef.current = null;
+    }
+  };
 
   useEffect(() => {
-    fetchTenant();
+    return () => stopWatching();
   }, []);
 
   useEffect(() => {
@@ -186,85 +232,11 @@ export default function RouterLink() {
     }
   };
 
-  const startWatching = () => {
-    if (!tenantSlug) return;
-    // Close existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    const url = `${window.location.origin}/api/router/v1/${tenantSlug}/watch`;
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
-
-    es.addEventListener("connected", (e) => {
-      const data = JSON.parse(e.data);
-      setConnectionStatus({ connected: false, status: "watching", message: data.message });
-      setLastError(null);
-    });
-
-    es.addEventListener("discovered", (e) => {
-      const data = JSON.parse(e.data);
-      setConnectionStatus(data);
-      setDebugInfo({ event: "discovered", data });
-      es.close();
-      eventSourceRef.current = null;
-      toast.success(`Router ${data.router?.name || ""} discovered!`);
-    });
-
-    es.addEventListener("heartbeat", (e) => {
-      const data = JSON.parse(e.data);
-      setWatchAttempts(data.attempts);
-      setWatchRemaining(data.remaining);
-    });
-
-    es.addEventListener("timeout", (e) => {
-      const data = JSON.parse(e.data);
-      setConnectionStatus({ connected: false, status: "timeout", message: data.message });
-      setLastError(data.message);
-      es.close();
-      eventSourceRef.current = null;
-    });
-
-    es.addEventListener("error", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setLastError(data.message);
-      } catch (_) {
-        setLastError("Watch connection lost. Reconnecting...");
-      }
-    });
-
-    es.onerror = () => {
-      // EventSource will auto-reconnect
-    };
-  };
-
-  const stopWatching = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => stopWatching();
-  }, []);
-
-  // Auto-start watching when we have both slug and key
-  useEffect(() => {
-    if (tenantSlug && apiKey) {
-      setPolling(true);
-      startWatching();
-    }
-  }, [tenantSlug, apiKey]);
-
   const fetchAllRouters = async () => {
     if (!tenantSlug) return;
     try {
       const { data } = await axios.get(`${API}/router/v1/${tenantSlug}/routers`);
-      setAllRouters(data.by_tenant_id || []);
+      setAllRouters(data.routers || data.by_tenant_id || []);
     } catch (e) {
       // silent
     }
