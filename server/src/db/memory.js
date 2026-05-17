@@ -35,6 +35,18 @@ const store = {
   radpostauth: [],
   ipam_subnets: [],
   ipam_ips: [],
+  // Billing tables (for db.query() direct access)
+  subscriptions: [],
+  service_plans: [],
+  invoices: [],
+  tickets: [],
+  ticket_categories: [],
+  ticket_messages: [],
+  reviews: [],
+  staff_points: [],
+  settings: [],
+  usage_records: [],
+  audit_logs: [],
 };
 
 // Seed example templates
@@ -1762,6 +1774,372 @@ module.exports = {
         );
       }
       return { rows: [] };
+    }
+
+    // ═══════════════════════════════════════
+    // BILLING & MISC TABLES
+    // ═══════════════════════════════════════
+
+    // SELECT subscriptions
+    if (lowerText.includes("from subscriptions")) {
+      if (lowerText.includes("select count(*)")) {
+        return { rows: [{ count: String(store.subscriptions.length) }] };
+      }
+      let rows = [...store.subscriptions];
+      if (lowerText.includes("where customer_id")) {
+        rows = rows.filter((r) => r.customer_id === params[0]);
+        if (lowerText.includes("status")) {
+          rows = rows.filter((r) => r.status === params[1]);
+        }
+      }
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      return { rows: rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) };
+    }
+
+    // INSERT subscriptions
+    if (lowerText.includes("insert into subscriptions")) {
+      const sub = {
+        id: params[0],
+        customer_id: params[1],
+        plan_id: params[2],
+        pppoe_username: params[3] || "",
+        pppoe_password: params[4] || "",
+        mac_address: params[5] || "",
+        pppoe_profile: params[6] || null,
+        start_date: params[7] || new Date().toISOString(),
+        end_date: params[8] || null,
+        billing_cycle: params[9] || "monthly",
+        status: params[10] || "active",
+        router_id: params[11] || null,
+        auto_provision: params[12] !== false,
+        created_at: new Date().toISOString(),
+      };
+      store.subscriptions.push(sub);
+      return { rows: [sub] };
+    }
+
+    // UPDATE subscriptions
+    if (lowerText.includes("update subscriptions")) {
+      const idx = store.subscriptions.findIndex(
+        (s) => s.id === params[params.length - 1],
+      );
+      if (idx === -1) return { rows: [] };
+      const sub = store.subscriptions[idx];
+      if (lowerText.includes("plan_id")) sub.plan_id = params[0];
+      if (lowerText.includes("status")) sub.status = params[0];
+      if (lowerText.includes("throttled")) sub.throttled = params[0];
+      if (lowerText.includes("throttle_reason")) sub.throttle_reason = params[0];
+      sub.updated_at = new Date().toISOString();
+      return { rows: [sub] };
+    }
+
+    // SELECT service_plans
+    if (lowerText.includes("from service_plans")) {
+      let rows = [...store.service_plans];
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      if (lowerText.includes("is_active")) {
+        rows = rows.filter((r) => r.is_active !== false);
+      }
+      return { rows };
+    }
+
+    // INSERT service_plans
+    if (lowerText.includes("insert into service_plans")) {
+      const plan = {
+        id: params[0],
+        name: params[1],
+        speed_up: params[2] || "1M",
+        speed_down: params[3] || "1M",
+        price: params[4] || 0,
+        quota_gb: params[5] || null,
+        created_at: new Date().toISOString(),
+      };
+      store.service_plans.push(plan);
+      return { rows: [plan] };
+    }
+
+    // SELECT invoices
+    if (lowerText.includes("from invoices")) {
+      let rows = [...store.invoices];
+      if (lowerText.includes("select count(*)")) {
+        return { rows: [{ count: String(store.invoices.length) }] };
+      }
+      if (lowerText.includes("where customer_id")) {
+        rows = rows.filter((r) => r.customer_id === params[0]);
+      }
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      return { rows: rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) };
+    }
+
+    // INSERT invoices
+    if (lowerText.includes("insert into invoices")) {
+      const invoice = {
+        id: params[0],
+        invoice_number: params[1],
+        customer_id: params[2],
+        subscription_id: params[3] || null,
+        amount: params[4] || 0,
+        tax: params[5] || 0,
+        total: (params[4] || 0) + (params[5] || 0),
+        due_date: params[6] || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        status: params[7] || "pending",
+        created_at: new Date().toISOString(),
+      };
+      store.invoices.push(invoice);
+      return { rows: [invoice] };
+    }
+
+    // INSERT payments (general)
+    if (lowerText.includes("insert into payments")) {
+      const payment = {
+        id: params[0],
+        customer_id: params[1],
+        invoice_id: params[2] || null,
+        phone: params[3] || "",
+        amount: params[4] || 0,
+        method: params[5] || "cash",
+        status: params[6] || "pending",
+        reference: params[7] || "",
+        received_at: params[8] || new Date().toISOString(),
+        receipt_number: "RCP-" + Date.now(),
+        created_at: new Date().toISOString(),
+      };
+      store.payments.push(payment);
+      return { rows: [payment] };
+    }
+
+    // SELECT tickets
+    if (lowerText.includes("from tickets")) {
+      let rows = [...store.tickets];
+      if (lowerText.includes("select count(*)")) {
+        return { rows: [{ count: String(store.tickets.length) }] };
+      }
+      if (lowerText.includes("where t.customer_id") || lowerText.includes("where tickets.customer_id")) {
+        rows = rows.filter((r) => r.customer_id === params[0]);
+      }
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      // Enrich with category
+      rows = rows.map((t) => {
+        const cat = store.ticket_categories.find((c) => c.id === t.category_id);
+        return {
+          ...t,
+          category_name: cat?.name || null,
+          category_color: cat?.color || null,
+          reply_count: store.ticket_messages.filter((m) => m.ticket_id === t.id).length,
+          last_reply_at: store.ticket_messages
+            .filter((m) => m.ticket_id === t.id)
+            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0]
+            ?.created_at || null,
+        };
+      });
+      return { rows: rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) };
+    }
+
+    // INSERT tickets
+    if (lowerText.includes("insert into tickets")) {
+      const ticket = {
+        id: params[0],
+        ticket_number: params[1],
+        customer_id: params[2],
+        category_id: params[3] || null,
+        subject: params[4],
+        description: params[5],
+        priority: params[6] || "medium",
+        status: params[7] || "open",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      store.tickets.push(ticket);
+      return { rows: [ticket] };
+    }
+
+    // SELECT ticket_categories
+    if (lowerText.includes("from ticket_categories")) {
+      let rows = [...store.ticket_categories];
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      if (lowerText.includes("where name ilike") || lowerText.includes("where name like")) {
+        rows = rows.filter((r) => r.name.toLowerCase() === String(params[0]).toLowerCase());
+      }
+      return { rows };
+    }
+
+    // INSERT ticket_categories
+    if (lowerText.includes("insert into ticket_categories")) {
+      const cat = {
+        id: params[0],
+        name: params[1],
+        color: params[2] || "#6366f1",
+        created_at: new Date().toISOString(),
+      };
+      store.ticket_categories.push(cat);
+      return { rows: [cat] };
+    }
+
+    // INSERT ticket_messages
+    if (lowerText.includes("insert into ticket_messages")) {
+      const msg = {
+        id: params[0] || uuidv4(),
+        ticket_id: params[1],
+        user_id: params[2] || null,
+        message: params[3],
+        is_internal: params[4] || false,
+        created_at: new Date().toISOString(),
+      };
+      store.ticket_messages.push(msg);
+      return { rows: [msg] };
+    }
+
+    // SELECT reviews
+    if (lowerText.includes("from reviews")) {
+      let rows = [...store.reviews];
+      if (lowerText.includes("select count(*)")) {
+        return { rows: [{ count: String(store.reviews.length) }] };
+      }
+      if (lowerText.includes("where customer_id")) {
+        rows = rows.filter((r) => r.customer_id === params[0]);
+      }
+      if (lowerText.includes("where id =")) {
+        rows = rows.filter((r) => r.id === params[0]);
+      }
+      return { rows: rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) };
+    }
+
+    // INSERT reviews
+    if (lowerText.includes("insert into reviews")) {
+      const review = {
+        id: params[0],
+        customer_id: params[1],
+        rating: params[2],
+        service_quality: params[3],
+        comment: params[4] || "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      store.reviews.push(review);
+      return { rows: [review] };
+    }
+
+    // UPDATE reviews
+    if (lowerText.includes("update reviews")) {
+      const idx = store.reviews.findIndex((r) => r.customer_id === params[3]);
+      if (idx === -1) return { rows: [] };
+      store.reviews[idx].rating = params[0];
+      store.reviews[idx].service_quality = params[1];
+      store.reviews[idx].comment = params[2];
+      store.reviews[idx].updated_at = new Date().toISOString();
+      return { rows: [store.reviews[idx]] };
+    }
+
+    // INSERT staff_points
+    if (lowerText.includes("insert into staff_points")) {
+      const sp = {
+        id: params[0] || uuidv4(),
+        user_id: params[1],
+        points: params[2],
+        review_id: params[3] || null,
+        reason: params[4] || "",
+        created_at: new Date().toISOString(),
+      };
+      store.staff_points.push(sp);
+      return { rows: [sp] };
+    }
+
+    // SELECT staff_points
+    if (lowerText.includes("from staff_points")) {
+      let rows = [...store.staff_points];
+      if (lowerText.includes("where sp.user_id") || lowerText.includes("where staff_points.user_id")) {
+        rows = rows.filter((r) => r.user_id === params[0]);
+      }
+      return { rows: rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) };
+    }
+
+    // SELECT FROM settings
+    if (lowerText.includes("from settings")) {
+      let rows = [...store.settings];
+      if (lowerText.includes("where key =")) {
+        rows = rows.filter((r) => r.key === params[0]);
+      }
+      if (lowerText.includes("where key in")) {
+        const keys = lowerText.match(/key in \(([^)]+)\)/);
+        if (keys) {
+          const keyList = keys[1].split(",").map((k) => k.trim().replace(/['"]/g, ""));
+          rows = rows.filter((r) => keyList.includes(r.key));
+        }
+      }
+      return { rows };
+    }
+
+    // INSERT/UPDATE settings
+    if (lowerText.includes("insert into settings")) {
+      const setting = {
+        id: params[0] || uuidv4(),
+        key: params[1],
+        value: params[2],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const existing = store.settings.findIndex((s) => s.key === setting.key);
+      if (existing !== -1) {
+        store.settings[existing].value = setting.value;
+        store.settings[existing].updated_at = new Date().toISOString();
+        return { rows: [store.settings[existing]] };
+      }
+      store.settings.push(setting);
+      return { rows: [setting] };
+    }
+
+    // SELECT FROM usage_records
+    if (lowerText.includes("from usage_records")) {
+      let rows = [...store.usage_records];
+      if (lowerText.includes("where customer_id")) {
+        rows = rows.filter((r) => r.customer_id === params[0]);
+      }
+      return { rows: rows.sort((a, b) => new Date(b.recorded_at || 0) - new Date(a.recorded_at || 0)) };
+    }
+
+    // INSERT usage_records
+    if (lowerText.includes("insert into usage_records")) {
+      const record = {
+        id: params[0] || uuidv4(),
+        customer_id: params[1],
+        bytes_in: params[2] || 0,
+        bytes_out: params[3] || 0,
+        session_time: params[4] || 0,
+        recorded_at: params[5] || new Date().toISOString(),
+      };
+      store.usage_records.push(record);
+      return { rows: [record] };
+    }
+
+    // INSERT audit_logs
+    if (lowerText.includes("insert into audit_logs")) {
+      const log = {
+        id: params[0],
+        action: params[1],
+        entity_type: params[2],
+        entity_id: params[3],
+        user_id: params[4],
+        user_name: params[5],
+        user_role: params[6],
+        ip_address: params[7],
+        user_agent: params[8],
+        details: params[9],
+        before_data: params[10],
+        after_data: params[11],
+        created_at: new Date().toISOString(),
+      };
+      store.audit_logs.push(log);
+      return { rows: [log] };
     }
 
     // INSERT/UPDATE anything else (generic fallback)

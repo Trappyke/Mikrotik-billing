@@ -16,6 +16,10 @@ function pgNow() {
   return new Date().toISOString();
 }
 
+function getBillingData() {
+  return require("../services/billingData");
+}
+
 // ─── In-memory fallback store ───
 const radiusStore = {
   sessions: [],
@@ -39,15 +43,10 @@ async function handleAccounting(data) {
   } = data;
 
   // Find customer by PPPoE username
-  const billing = require("./billingStore");
-  const customer = billing.store.customers.find((c) => {
-    const sub = billing.store.subscriptions.find(
-      (s) => s.customer_id === c.id && s.pppoe_username === username,
-    );
-    return sub;
-  });
+  const billingData = getBillingData();
+  const lookup = await billingData.findCustomerByPppoeUsername(username);
 
-  if (!customer) {
+  if (!lookup) {
     return {
       accepted: true,
       message: "Unknown user",
@@ -55,12 +54,9 @@ async function handleAccounting(data) {
     };
   }
 
-  const subscription = billing.store.subscriptions.find(
-    (s) => s.customer_id === customer.id && s.pppoe_username === username,
-  );
-  const plan = subscription
-    ? billing.store.service_plans.find((p) => p.id === subscription.plan_id)
-    : null;
+  const customer = lookup.customer;
+  const subscription = lookup.subscription;
+  const plan = lookup.plan;
 
   const db = getDb();
 
@@ -156,9 +152,10 @@ async function handleAccounting(data) {
 
         if (usedPercent >= 100 && !subscription.throttled) {
           // Quota exceeded - throttle
-          subscription.throttled = true;
-          subscription.throttle_reason = "quota_exceeded";
-          subscription.updated_at = new Date().toISOString();
+          await billingData.updateSubscription(subscription.id, {
+            throttled: true,
+            throttle_reason: "quota_exceeded",
+          });
 
           const logEntry = {
             id: uuidv4(),
@@ -303,12 +300,13 @@ async function handleAccounting(data) {
 
 // ─── Get Total Customer Usage (current billing cycle) ───
 async function getTotalCustomerUsage(customerId) {
-  const billing = require("./billingStore");
-  const customer = billing.store.customers.find((c) => c.id === customerId);
+  const billingData = getBillingData();
+  const customer = await billingData.getCustomerById(customerId);
   if (!customer) return 0;
 
   // Find active subscription
-  const subscription = billing.store.subscriptions.find(
+  const subscriptions = await billingData.listSubscriptions();
+  const subscription = subscriptions.find(
     (s) => s.customer_id === customerId && s.status === "active",
   );
   if (!subscription) return 0;
@@ -348,11 +346,12 @@ async function getTotalCustomerUsage(customerId) {
 
 // ─── Reset Quotas for New Billing Cycle ───
 async function resetQuotas() {
-  const billing = require("./billingStore");
+  const billingData = getBillingData();
   const db = getDb();
   const now = new Date();
 
-  for (const sub of billing.store.subscriptions) {
+  const subscriptions = await billingData.listSubscriptions();
+  for (const sub of subscriptions) {
     if (
       sub.status === "active" &&
       sub.throttled &&
@@ -366,9 +365,10 @@ async function resetQuotas() {
         now.getFullYear() !== startDate.getFullYear()
       ) {
         // New billing cycle - reset throttle
-        sub.throttled = false;
-        sub.throttle_reason = null;
-        sub.updated_at = new Date().toISOString();
+        await billingData.updateSubscription(sub.id, {
+          throttled: false,
+          throttle_reason: null,
+        });
 
         const logEntry = {
           id: uuidv4(),

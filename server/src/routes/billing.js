@@ -324,7 +324,7 @@ router.put("/customers/:id", async (req, res) => {
                 [req.params.id],
               )
             ).rows[0] || null
-          : billing.store.subscriptions.find(
+          : (await billing.listSubscriptions()).find(
               (s) => s.customer_id === req.params.id && s.status === "active",
             ) || null;
         if (existingSub) {

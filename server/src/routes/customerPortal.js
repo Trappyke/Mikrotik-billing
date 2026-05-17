@@ -7,7 +7,7 @@
 const express = require("express");
 const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
-const billing = require("../db/billingStore");
+const billingData = require("../services/billingData");
 const radiusStore = require("../db/radiusStore");
 const MpesaService = require("../services/mpesa");
 const { triggerSMS } = require("./sms");
@@ -80,125 +80,114 @@ router.get("/admin/staff-points/:userId", async (req, res) => {
 // ═══════════════════════════════════════
 
 // Customer login (phone + PIN)
-router.post("/login", (req, res) => {
-  const { phone, pin } = req.body;
-  const normalizedPhone = String(phone || "").replace(/\s/g, "");
+router.post("/login", async (req, res) => {
+  try {
+    const { phone, pin } = req.body;
+    const normalizedPhone = String(phone || "").replace(/\s/g, "");
 
-  // For demo: use phone number as PIN if no PIN set
-  // In production, store hashed PIN on customer record
-  const customer = billing.store.customers.find(
-    (c) => c.phone === phone || c.phone?.replace(/\s/g, "") === normalizedPhone,
-  );
+    const customers = await billingData.listCustomers();
+    const customer = customers.find(
+      (c) => c.phone === phone || c.phone?.replace(/\s/g, "") === normalizedPhone,
+    );
 
-  if (!customer) return res.status(401).json({ error: "Customer not found" });
+    if (!customer) return res.status(401).json({ error: "Customer not found" });
 
-  // Simple PIN check - in production use bcrypt
-  const expectedPin = customer.pin || phone?.slice(-4) || "1234";
-  if (pin !== expectedPin) {
-    return res.status(401).json({ error: "Invalid PIN" });
+    // Simple PIN check - in production use bcrypt
+    const expectedPin = customer.pin || phone?.slice(-4) || "1234";
+    if (pin !== expectedPin) {
+      return res.status(401).json({ error: "Invalid PIN" });
+    }
+
+    // Get subscription and plan
+    const subscriptions = await billingData.listSubscriptions();
+    const subscription = subscriptions.find(
+      (s) => s.customer_id === customer.id && s.status === "active",
+    );
+    const plans = await billingData.listPlans();
+    const plan = subscription
+      ? plans.find((p) => p.id === subscription.plan_id)
+      : null;
+
+    // Get usage
+    const usage = radiusStore.getUsageReport(customer.id, "month");
+    const quotaUsed = plan?.quota_gb
+      ? (
+          (usage.total_bytes / (plan.quota_gb * 1024 * 1024 * 1024)) *
+          100
+        ).toFixed(0)
+      : null;
+
+    // Get outstanding invoices
+    const invoices = await billingData.listInvoices();
+    const outstandingInvoices = invoices.filter(
+      (i) => i.customer_id === customer.id && i.status !== "paid",
+    );
+    const totalOutstanding = outstandingInvoices.reduce(
+      (sum, i) => sum + (i.total - (i.paid_amount || 0)),
+      0,
+    );
+
+    res.json({
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+        status: customer.status,
+      },
+      subscription: subscription
+        ? {
+            status: subscription.status,
+            plan_name: plan?.name,
+            speed: plan ? `${plan.speed_down}/${plan.speed_up}` : null,
+            price: plan?.price,
+            start_date: subscription.start_date,
+            throttled: subscription.throttled,
+          }
+        : null,
+      usage: {
+        total_gb: usage.total_gb,
+        quota_gb: plan?.quota_gb,
+        quota_used_percent: quotaUsed,
+        session_count: usage.session_count,
+        avg_session_time: usage.avg_session_time,
+      },
+      balance: totalOutstanding,
+      invoices: outstandingInvoices.map((i) => ({
+        id: i.id,
+        invoice_number: i.invoice_number,
+        amount: i.total,
+        paid: i.paid_amount || 0,
+        balance: i.total - (i.paid_amount || 0),
+        due_date: i.due_date,
+        status: i.status,
+      })),
+    });
+  } catch (e) {
+    console.error("Customer login error:", e);
+    res.status(500).json({ error: e.message });
   }
-
-  // Get subscription and plan
-  const subscription = billing.store.subscriptions.find(
-    (s) => s.customer_id === customer.id && s.status === "active",
-  );
-  const plan = subscription
-    ? billing.store.service_plans.find((p) => p.id === subscription.plan_id)
-    : null;
-
-  // Get usage
-  const usage = radiusStore.getUsageReport(customer.id, "month");
-  const quotaUsed = plan?.quota_gb
-    ? (
-        (usage.total_bytes / (plan.quota_gb * 1024 * 1024 * 1024)) *
-        100
-      ).toFixed(0)
-    : null;
-
-  // Get outstanding invoices
-  const outstandingInvoices = billing.store.invoices.filter(
-    (i) => i.customer_id === customer.id && i.status !== "paid",
-  );
-  const totalOutstanding = outstandingInvoices.reduce(
-    (sum, i) => sum + (i.total - (i.paid_amount || 0)),
-    0,
-  );
-
-  res.json({
-    customer: {
-      id: customer.id,
-      name: customer.name,
-      phone: customer.phone,
-      email: customer.email,
-      status: customer.status,
-    },
-    subscription: subscription
-      ? {
-          status: subscription.status,
-          plan_name: plan?.name,
-          speed: plan ? `${plan.speed_down}/${plan.speed_up}` : null,
-          price: plan?.price,
-          start_date: subscription.start_date,
-          throttled: subscription.throttled,
-        }
-      : null,
-    usage: {
-      total_gb: usage.total_gb,
-      quota_gb: plan?.quota_gb,
-      quota_used_percent: quotaUsed,
-      session_count: usage.session_count,
-      avg_session_time: usage.avg_session_time,
-    },
-    balance: totalOutstanding,
-    invoices: outstandingInvoices.map((i) => ({
-      id: i.id,
-      invoice_number: i.invoice_number,
-      amount: i.total,
-      paid: i.paid_amount || 0,
-      balance: i.total - (i.paid_amount || 0),
-      due_date: i.due_date,
-      status: i.status,
-    })),
-  });
 });
 
 // Get customer dashboard
 router.get("/:customerId/dashboard", async (req, res) => {
   try {
-    const result = await db.query("SELECT * FROM customers WHERE id = $1", [
-      req.params.customerId,
-    ]);
+    const customer = await billingData.getCustomerById(req.params.customerId);
 
-    if (result.rows.length === 0) {
+    if (!customer) {
       return res.status(404).json({ error: "Customer not found" });
     }
 
-    const customer = result.rows[0];
+    const allSubscriptions = await billingData.listSubscriptions();
+    const subscription = allSubscriptions.find(
+      (s) => s.customer_id === customer.id && s.status === "active",
+    ) || null;
 
-    // Get subscription
-    const subResult = await db.query(
-      `SELECT s.*, p.name as plan_name, p.speed_down, p.speed_up, p.price, p.quota_gb
-       FROM subscriptions s
-       LEFT JOIN service_plans p ON p.id = s.plan_id
-       WHERE s.customer_id = $1 AND s.status = 'active'
-       ORDER BY s.created_at DESC LIMIT 1`,
-      [customer.id],
-    );
-    const subscription = subResult.rows[0];
+    const allInvoices = await billingData.listInvoices();
+    const invoices = allInvoices.filter((i) => i.customer_id === customer.id);
 
-    // Get invoices
-    const invResult = await db.query(
-      "SELECT * FROM invoices WHERE customer_id = $1 ORDER BY created_at DESC",
-      [customer.id],
-    );
-    const invoices = invResult.rows;
-
-    // Get payments
-    const payResult = await db.query(
-      "SELECT * FROM payments WHERE customer_id = $1 ORDER BY received_at DESC LIMIT 10",
-      [customer.id],
-    );
-    const payments = payResult.rows;
+    const allPayments = await billingData.listPayments({ customerId: customer.id });
+    const payments = allPayments.slice(0, 10);
 
     // Get tickets
     const ticketResult = await db.query(
@@ -213,23 +202,23 @@ router.get("/:customerId/dashboard", async (req, res) => {
 
     const outstanding = invoices
       .filter((i) => i.status !== "paid")
-      .reduce((sum, i) => sum + i.total - (i.paid_amount || 0), 0);
+      .reduce((sum, i) => sum + billingData.toNumber(i.total, 0) - billingData.toNumber(i.paid_amount, 0), 0);
 
-    // Get usage from RADIUS store (simplified)
+    // Get usage from RADIUS store
     const usage = radiusStore.getUsageReport(customer.id, "month");
-    const quotaUsed = subscription?.quota_gb
+    const quotaUsed = subscription?.plan?.quota_gb
       ? (
-          (usage.total_bytes / (subscription.quota_gb * 1024 * 1024 * 1024)) *
+          (usage.total_bytes / (subscription.plan.quota_gb * 1024 * 1024 * 1024)) *
           100
         ).toFixed(0)
       : null;
 
     res.json({
       customer,
-      subscription: { ...subscription, plan: subscription },
+      subscription,
       usage: {
         ...usage,
-        quota_gb: subscription?.quota_gb,
+        quota_gb: subscription?.plan?.quota_gb,
         quota_used_percent: quotaUsed,
       },
       outstanding_balance: outstanding,
@@ -422,176 +411,207 @@ router.get("/radius/sessions/active", (req, res) => {
 // ═══════════════════════════════════════
 
 // Daily collection report
-router.get("/reports/daily", (req, res) => {
-  const { date = new Date().toISOString().split("T")[0] } = req.query;
-  const startOfDay = new Date(date + "T00:00:00");
-  const endOfDay = new Date(date + "T23:59:59");
+router.get("/reports/daily", async (req, res) => {
+  try {
+    const { date = new Date().toISOString().split("T")[0] } = req.query;
+    const startOfDay = new Date(date + "T00:00:00");
+    const endOfDay = new Date(date + "T23:59:59");
 
-  const payments = billing.store.payments.filter((p) => {
-    const paidAt = new Date(p.received_at);
-    return paidAt >= startOfDay && paidAt <= endOfDay;
-  });
+    const allPayments = await billingData.listPayments();
+    const allCustomers = await billingData.listCustomers();
 
-  const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
-  const byMethod = {};
-  const byAgent = {};
+    const payments = allPayments.filter((p) => {
+      const paidAt = new Date(p.received_at || p.created_at);
+      return paidAt >= startOfDay && paidAt <= endOfDay;
+    });
 
-  payments.forEach((p) => {
-    byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
-  });
+    const totalCollected = payments.reduce((sum, p) => sum + billingData.toNumber(p.amount, 0), 0);
+    const byMethod = {};
 
-  res.json({
-    date,
-    total_collected: totalCollected,
-    payment_count: payments.length,
-    by_method: byMethod,
-    payments: payments.map((p) => ({
-      time: new Date(p.received_at).toLocaleTimeString(),
-      customer:
-        billing.store.customers.find((c) => c.id === p.customer_id)?.name ||
-        "Unknown",
-      amount: p.amount,
-      method: p.method,
-      receipt: p.receipt_number,
-      reference: p.reference,
-    })),
-  });
+    payments.forEach((p) => {
+      byMethod[p.method] = (byMethod[p.method] || 0) + billingData.toNumber(p.amount, 0);
+    });
+
+    res.json({
+      date,
+      total_collected: totalCollected,
+      payment_count: payments.length,
+      by_method: byMethod,
+      payments: payments.map((p) => ({
+        time: new Date(p.received_at || p.created_at).toLocaleTimeString(),
+        customer:
+          allCustomers.find((c) => c.id === p.customer_id)?.name ||
+          "Unknown",
+        amount: billingData.toNumber(p.amount, 0),
+        method: p.method,
+        receipt: p.receipt_number,
+        reference: p.reference,
+      })),
+    });
+  } catch (e) {
+    console.error("Daily report error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Monthly revenue report
-router.get("/reports/monthly", (req, res) => {
-  const { month = new Date().getMonth(), year = new Date().getFullYear() } =
-    req.query;
-  const startDate = new Date(year, month, 1);
-  const endDate = new Date(year, month + 1, 0, 23, 59, 59);
+router.get("/reports/monthly", async (req, res) => {
+  try {
+    const { month = new Date().getMonth(), year = new Date().getFullYear() } =
+      req.query;
+    const startDate = new Date(year, month, 1);
+    const endDate = new Date(year, month + 1, 0, 23, 59, 59);
 
-  const invoices = billing.store.invoices.filter((i) => {
-    const created = new Date(i.created_at);
-    return created >= startDate && created <= endDate;
-  });
+    const allInvoices = await billingData.listInvoices();
+    const allPayments = await billingData.listPayments();
+    const allCustomers = await billingData.listCustomers();
 
-  const payments = billing.store.payments.filter((p) => {
-    const paidAt = new Date(p.received_at);
-    return paidAt >= startDate && paidAt <= endDate;
-  });
+    const invoices = allInvoices.filter((i) => {
+      const created = new Date(i.created_at);
+      return created >= startDate && created <= endDate;
+    });
 
-  const totalInvoiced = invoices.reduce((sum, i) => sum + i.total, 0);
-  const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
-  const outstanding = totalInvoiced - totalCollected;
+    const payments = allPayments.filter((p) => {
+      const paidAt = new Date(p.received_at || p.created_at);
+      return paidAt >= startDate && paidAt <= endDate;
+    });
 
-  // Revenue by branch
-  const multiStore = require("../db/multiFeatureStore");
-  const byBranch = multiStore.branches.map((b) => {
-    const branchCustomers = billing.store.customers
-      .filter((c) => c.branch_id === b.id)
-      .map((c) => c.id);
-    const branchPayments = payments.filter((p) =>
-      branchCustomers.includes(p.customer_id),
-    );
-    const branchRevenue = branchPayments.reduce((sum, p) => sum + p.amount, 0);
-    return {
-      branch: b.name,
-      revenue: branchRevenue,
-      customer_count: branchCustomers.length,
-    };
-  });
+    const totalInvoiced = invoices.reduce((sum, i) => sum + billingData.toNumber(i.total, 0), 0);
+    const totalCollected = payments.reduce((sum, p) => sum + billingData.toNumber(p.amount, 0), 0);
+    const outstanding = totalInvoiced - totalCollected;
 
-  res.json({
-    month: parseInt(month) + 1,
-    year: parseInt(year),
-    total_invoiced: totalInvoiced,
-    total_collected: totalCollected,
-    outstanding: outstanding,
-    collection_rate:
-      totalInvoiced > 0
-        ? ((totalCollected / totalInvoiced) * 100).toFixed(1) + "%"
-        : "0%",
-    by_branch: byBranch,
-    by_method: Object.entries(
-      payments.reduce((acc, p) => {
-        acc[p.method] = (acc[p.method] || 0) + p.amount;
-        return acc;
-      }, {}),
-    ),
-  });
+    // Revenue by branch
+    const multiStore = require("../db/multiFeatureStore");
+    const byBranch = multiStore.branches.map((b) => {
+      const branchCustomers = allCustomers
+        .filter((c) => c.branch_id === b.id)
+        .map((c) => c.id);
+      const branchPayments = payments.filter((p) =>
+        branchCustomers.includes(p.customer_id),
+      );
+      const branchRevenue = branchPayments.reduce((sum, p) => sum + billingData.toNumber(p.amount, 0), 0);
+      return {
+        branch: b.name,
+        revenue: branchRevenue,
+        customer_count: branchCustomers.length,
+      };
+    });
+
+    res.json({
+      month: parseInt(month) + 1,
+      year: parseInt(year),
+      total_invoiced: totalInvoiced,
+      total_collected: totalCollected,
+      outstanding: outstanding,
+      collection_rate:
+        totalInvoiced > 0
+          ? ((totalCollected / totalInvoiced) * 100).toFixed(1) + "%"
+          : "0%",
+      by_branch: byBranch,
+      by_method: Object.entries(
+        payments.reduce((acc, p) => {
+          acc[p.method] = (acc[p.method] || 0) + billingData.toNumber(p.amount, 0);
+          return acc;
+        }, {}),
+      ),
+    });
+  } catch (e) {
+    console.error("Monthly report error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Outstanding debtors report
-router.get("/reports/debtors", (req, res) => {
-  const debtors = billing.store.customers
-    .map((c) => {
-      const invoices = billing.store.invoices.filter(
-        (i) => i.customer_id === c.id && i.status !== "paid",
-      );
-      const totalOutstanding = invoices.reduce(
-        (sum, i) => sum + (i.total - (i.paid_amount || 0)),
-        0,
-      );
-      const oldestInvoice = invoices.sort(
-        (a, b) => new Date(a.due_date) - new Date(b.due_date),
-      )[0];
-      const daysOverdue = oldestInvoice
-        ? Math.floor(
-            (Date.now() - new Date(oldestInvoice.due_date).getTime()) /
-              (24 * 60 * 60 * 1000),
-          )
-        : 0;
+router.get("/reports/debtors", async (req, res) => {
+  try {
+    const allCustomers = await billingData.listCustomers();
+    const allInvoices = await billingData.listInvoices();
 
-      return {
-        customer: c,
-        outstanding: totalOutstanding,
-        invoice_count: invoices.length,
-        oldest_due: oldestInvoice?.due_date,
-        days_overdue: Math.max(0, daysOverdue),
-      };
-    })
-    .filter((d) => d.outstanding > 0)
-    .sort((a, b) => b.outstanding - a.outstanding);
+    const debtors = allCustomers
+      .map((c) => {
+        const invoices = allInvoices.filter(
+          (i) => i.customer_id === c.id && i.status !== "paid",
+        );
+        const totalOutstanding = invoices.reduce(
+          (sum, i) => sum + (billingData.toNumber(i.total, 0) - billingData.toNumber(i.paid_amount, 0)),
+          0,
+        );
+        const oldestInvoice = invoices.sort(
+          (a, b) => new Date(a.due_date) - new Date(b.due_date),
+        )[0];
+        const daysOverdue = oldestInvoice
+          ? Math.floor(
+              (Date.now() - new Date(oldestInvoice.due_date).getTime()) /
+                (24 * 60 * 60 * 1000),
+            )
+          : 0;
 
-  const totalDebt = debtors.reduce((sum, d) => sum + d.outstanding, 0);
+        return {
+          customer: c,
+          outstanding: totalOutstanding,
+          invoice_count: invoices.length,
+          oldest_due: oldestInvoice?.due_date,
+          days_overdue: Math.max(0, daysOverdue),
+        };
+      })
+      .filter((d) => d.outstanding > 0)
+      .sort((a, b) => b.outstanding - a.outstanding);
 
-  res.json({
-    total_debtors: debtors.length,
-    total_outstanding: totalDebt,
-    debtors,
-  });
+    const totalDebt = debtors.reduce((sum, d) => sum + d.outstanding, 0);
+
+    res.json({
+      total_debtors: debtors.length,
+      total_outstanding: totalDebt,
+      debtors,
+    });
+  } catch (e) {
+    console.error("Debtors report error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Tax filing report
-router.get("/reports/tax", (req, res) => {
-  const { start_date, end_date } = req.query;
-  const startDate = start_date
-    ? new Date(start_date)
-    : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const endDate = end_date ? new Date(end_date) : new Date();
+router.get("/reports/tax", async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const startDate = start_date
+      ? new Date(start_date)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const endDate = end_date ? new Date(end_date) : new Date();
 
-  const invoices = billing.store.invoices.filter((i) => {
-    const created = new Date(i.created_at);
-    return created >= startDate && created <= endDate;
-  });
+    const allInvoices = await billingData.listInvoices();
+    const allCustomers = await billingData.listCustomers();
 
-  const totalTax = invoices.reduce((sum, i) => sum + (i.tax || 0), 0);
-  const totalRevenue = invoices.reduce((sum, i) => sum + i.amount, 0);
+    const invoices = allInvoices.filter((i) => {
+      const created = new Date(i.created_at);
+      return created >= startDate && created <= endDate;
+    });
 
-  res.json({
-    period: {
-      start: startDate.toISOString().split("T")[0],
-      end: endDate.toISOString().split("T")[0],
-    },
-    total_revenue_excluding_tax: totalRevenue,
-    total_tax: totalTax,
-    total_revenue_including_tax: totalRevenue + totalTax,
-    tax_rate: invoices[0]?.tax_rate || 16,
-    invoices: invoices.map((i) => ({
-      invoice_number: i.invoice_number,
-      customer: billing.store.customers.find((c) => c.id === i.customer_id)
-        ?.name,
-      amount: i.amount,
-      tax: i.tax,
-      total: i.total,
-      date: i.created_at.split("T")[0],
-    })),
-  });
+    const totalTax = invoices.reduce((sum, i) => sum + billingData.toNumber(i.tax, 0), 0);
+    const totalRevenue = invoices.reduce((sum, i) => sum + billingData.toNumber(i.amount, 0), 0);
+
+    res.json({
+      period: {
+        start: startDate.toISOString().split("T")[0],
+        end: endDate.toISOString().split("T")[0],
+      },
+      total_revenue_excluding_tax: totalRevenue,
+      total_tax: totalTax,
+      total_revenue_including_tax: totalRevenue + totalTax,
+      tax_rate: invoices[0]?.tax_rate || 16,
+      invoices: invoices.map((i) => ({
+        invoice_number: i.invoice_number,
+        customer: allCustomers.find((c) => c.id === i.customer_id)?.name,
+        amount: billingData.toNumber(i.amount, 0),
+        tax: billingData.toNumber(i.tax, 0),
+        total: billingData.toNumber(i.total, 0),
+        date: (i.created_at || "").toString().split("T")[0],
+      })),
+    });
+  } catch (e) {
+    console.error("Tax report error:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Agent commission report
@@ -633,206 +653,140 @@ router.get("/reports/commissions", (req, res) => {
 });
 
 // Export any report to CSV
-router.get("/reports/export/:type", (req, res) => {
-  const { type } = req.params;
+router.get("/reports/export/:type", async (req, res) => {
+  try {
+    const { type } = req.params;
 
-  // Generate report data based on type
-  let headers = [];
-  let rows = [];
+    const allPayments = await billingData.listPayments();
+    const allInvoices = await billingData.listInvoices();
+    const allCustomers = await billingData.listCustomers();
 
-  switch (type) {
-    case "daily": {
-      headers = [
-        "Time",
-        "Customer",
-        "Amount",
-        "Method",
-        "Receipt",
-        "Reference",
-      ];
-      const { date = new Date().toISOString().split("T")[0] } = req.query;
-      const startOfDay = new Date(date + "T00:00:00");
-      const endOfDay = new Date(date + "T23:59:59");
-      const payments = billing.store.payments.filter((p) => {
-        const paidAt = new Date(p.received_at);
-        return paidAt >= startOfDay && paidAt <= endOfDay;
-      });
-      rows = payments.map((p) => [
-        new Date(p.received_at).toLocaleTimeString(),
-        billing.store.customers.find((c) => c.id === p.customer_id)?.name ||
-          "Unknown",
-        p.amount.toFixed(2),
-        p.method,
-        p.receipt_number,
-        p.reference,
-      ]);
-      break;
-    }
-    case "monthly": {
-      headers = [
-        "Month",
-        "Total Invoiced",
-        "Total Collected",
-        "Outstanding",
-        "Collection Rate",
-      ];
-      const { month = new Date().getMonth(), year = new Date().getFullYear() } =
-        req.query;
-      const startDate = new Date(year, month, 1);
-      const endDate = new Date(year, parseInt(month) + 1, 0, 23, 59, 59);
-      const invoices = billing.store.invoices.filter((i) => {
-        const created = new Date(i.created_at);
-        return created >= startDate && created <= endDate;
-      });
-      const payments = billing.store.payments.filter((p) => {
-        const paidAt = new Date(p.received_at);
-        return paidAt >= startDate && paidAt <= endDate;
-      });
-      const totalInvoiced = invoices.reduce((sum, i) => sum + i.total, 0);
-      const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
-      const outstanding = totalInvoiced - totalCollected;
-      const collectionRate =
-        totalInvoiced > 0
-          ? ((totalCollected / totalInvoiced) * 100).toFixed(1) + "%"
-          : "0%";
-      rows = [
-        [
+    let headers = [];
+    let rows = [];
+
+    switch (type) {
+      case "daily": {
+        headers = [
+          "Time", "Customer", "Amount", "Method", "Receipt", "Reference",
+        ];
+        const { date = new Date().toISOString().split("T")[0] } = req.query;
+        const startOfDay = new Date(date + "T00:00:00");
+        const endOfDay = new Date(date + "T23:59:59");
+        const payments = allPayments.filter((p) => {
+          const paidAt = new Date(p.received_at || p.created_at);
+          return paidAt >= startOfDay && paidAt <= endOfDay;
+        });
+        rows = payments.map((p) => [
+          new Date(p.received_at || p.created_at).toLocaleTimeString(),
+          allCustomers.find((c) => c.id === p.customer_id)?.name || "Unknown",
+          (billingData.toNumber(p.amount, 0)).toFixed(2),
+          p.method,
+          p.receipt_number,
+          p.reference,
+        ]);
+        break;
+      }
+      case "monthly": {
+        headers = [
+          "Month", "Total Invoiced", "Total Collected", "Outstanding", "Collection Rate",
+        ];
+        const { month = new Date().getMonth(), year = new Date().getFullYear() } = req.query;
+        const startDate = new Date(year, month, 1);
+        const endDate = new Date(year, parseInt(month) + 1, 0, 23, 59, 59);
+        const invoices = allInvoices.filter((i) => {
+          const created = new Date(i.created_at);
+          return created >= startDate && created <= endDate;
+        });
+        const payments = allPayments.filter((p) => {
+          const paidAt = new Date(p.received_at || p.created_at);
+          return paidAt >= startDate && paidAt <= endDate;
+        });
+        const totalInvoiced = invoices.reduce((sum, i) => sum + billingData.toNumber(i.total, 0), 0);
+        const totalCollected = payments.reduce((sum, p) => sum + billingData.toNumber(p.amount, 0), 0);
+        const outstanding = totalInvoiced - totalCollected;
+        const collectionRate = totalInvoiced > 0 ? ((totalCollected / totalInvoiced) * 100).toFixed(1) + "%" : "0%";
+        rows = [[
           `${parseInt(month) + 1}/${year}`,
           totalInvoiced.toFixed(2),
           totalCollected.toFixed(2),
           outstanding.toFixed(2),
           collectionRate,
-        ],
-      ];
-      break;
-    }
-    case "debtors": {
-      headers = [
-        "Customer",
-        "Phone",
-        "Outstanding",
-        "Invoices",
-        "Oldest Due",
-        "Days Overdue",
-      ];
-      const debtors = billing.store.customers
-        .map((c) => {
-          const invoices = billing.store.invoices.filter(
-            (i) => i.customer_id === c.id && i.status !== "paid",
-          );
-          const total = invoices.reduce(
-            (sum, i) => sum + (i.total - (i.paid_amount || 0)),
-            0,
-          );
-          const oldest = invoices.sort(
-            (a, b) => new Date(a.due_date) - new Date(b.due_date),
-          )[0];
-          const daysOverdue = oldest
-            ? Math.floor(
-                (Date.now() - new Date(oldest.due_date).getTime()) /
-                  (24 * 60 * 60 * 1000),
-              )
-            : 0;
+        ]];
+        break;
+      }
+      case "debtors": {
+        headers = [
+          "Customer", "Phone", "Outstanding", "Invoices", "Oldest Due", "Days Overdue",
+        ];
+        const debtors = allCustomers
+          .map((c) => {
+            const invoices = allInvoices.filter((i) => i.customer_id === c.id && i.status !== "paid");
+            const total = invoices.reduce((sum, i) => sum + (billingData.toNumber(i.total, 0) - billingData.toNumber(i.paid_amount, 0)), 0);
+            const oldest = invoices.sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0];
+            const daysOverdue = oldest ? Math.floor((Date.now() - new Date(oldest.due_date).getTime()) / (24 * 60 * 60 * 1000)) : 0;
+            return { customer: c, total, count: invoices.length, oldestDue: oldest?.due_date || "-", daysOverdue: Math.max(0, daysOverdue) };
+          })
+          .filter((d) => d.total > 0);
+        rows = debtors.map((d) => [
+          d.customer.name, d.customer.phone || "", d.total.toFixed(2), d.count, d.oldestDue, String(d.daysOverdue),
+        ]);
+        break;
+      }
+      case "tax": {
+        headers = ["Invoice", "Customer", "Amount", "Tax", "Total", "Date"];
+        const { start_date, end_date } = req.query;
+        const startDate = start_date ? new Date(start_date) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const endDate = end_date ? new Date(end_date) : new Date();
+        const invoices = allInvoices.filter((i) => {
+          const created = new Date(i.created_at);
+          return created >= startDate && created <= endDate;
+        });
+        rows = invoices.map((i) => [
+          i.invoice_number,
+          allCustomers.find((c) => c.id === i.customer_id)?.name || "Unknown",
+          (billingData.toNumber(i.amount, 0)).toFixed(2),
+          (billingData.toNumber(i.tax, 0)).toFixed(2),
+          (billingData.toNumber(i.total, 0)).toFixed(2),
+          (i.created_at || "").toString().split("T")[0],
+        ]);
+        break;
+      }
+      case "commissions": {
+        headers = ["Agent", "Vouchers Sold", "Total Sales", "Commission Rate", "Commission Earned", "Commission Paid", "Pending Payout"];
+        const multiStore = require("../db/multiFeatureStore");
+        const agentReports = multiStore.agents.map((a) => {
+          const soldVouchers = multiStore.vouchers.filter((v) => v.sold_by === a.id);
+          const totalSales = soldVouchers.reduce((sum, v) => sum + v.price, 0);
+          const commission = totalSales * (a.commission_rate / 100);
           return {
-            customer: c,
-            total,
-            count: invoices.length,
-            oldestDue: oldest?.due_date || "-",
-            daysOverdue: Math.max(0, daysOverdue),
+            name: a.name, vouchers_sold: soldVouchers.length, total_sales: totalSales,
+            commission_rate: a.commission_rate, commission_earned: commission,
+            commission_paid: a.commission_paid || 0, pending_payout: commission - (a.commission_paid || 0),
           };
-        })
-        .filter((d) => d.total > 0);
-      rows = debtors.map((d) => [
-        d.customer.name,
-        d.customer.phone || "",
-        d.total.toFixed(2),
-        d.count,
-        d.oldestDue,
-        String(d.daysOverdue),
-      ]);
-      break;
+        });
+        rows = agentReports.map((a) => [
+          a.name, String(a.vouchers_sold), a.total_sales.toFixed(2),
+          a.commission_rate + "%", a.commission_earned.toFixed(2),
+          a.commission_paid.toFixed(2), a.pending_payout.toFixed(2),
+        ]);
+        break;
+      }
+      default:
+        return res.status(400).json({ error: "Unknown report type. Use: daily, monthly, debtors, tax, commissions" });
     }
-    case "tax": {
-      headers = ["Invoice", "Customer", "Amount", "Tax", "Total", "Date"];
-      const { start_date, end_date } = req.query;
-      const startDate = start_date
-        ? new Date(start_date)
-        : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-      const endDate = end_date ? new Date(end_date) : new Date();
-      const invoices = billing.store.invoices.filter((i) => {
-        const created = new Date(i.created_at);
-        return created >= startDate && created <= endDate;
-      });
-      rows = invoices.map((i) => [
-        i.invoice_number,
-        billing.store.customers.find((c) => c.id === i.customer_id)?.name ||
-          "Unknown",
-        i.amount.toFixed(2),
-        (i.tax || 0).toFixed(2),
-        i.total.toFixed(2),
-        i.created_at.split("T")[0],
-      ]);
-      break;
-    }
-    case "commissions": {
-      headers = [
-        "Agent",
-        "Vouchers Sold",
-        "Total Sales",
-        "Commission Rate",
-        "Commission Earned",
-        "Commission Paid",
-        "Pending Payout",
-      ];
-      const multiStore = require("../db/multiFeatureStore");
-      const agentReports = multiStore.agents.map((a) => {
-        const soldVouchers = multiStore.vouchers.filter(
-          (v) => v.sold_by === a.id,
-        );
-        const totalSales = soldVouchers.reduce((sum, v) => sum + v.price, 0);
-        const commission = totalSales * (a.commission_rate / 100);
-        return {
-          name: a.name,
-          vouchers_sold: soldVouchers.length,
-          total_sales: totalSales,
-          commission_rate: a.commission_rate,
-          commission_earned: commission,
-          commission_paid: a.commission_paid || 0,
-          pending_payout: commission - (a.commission_paid || 0),
-        };
-      });
-      rows = agentReports.map((a) => [
-        a.name,
-        String(a.vouchers_sold),
-        a.total_sales.toFixed(2),
-        a.commission_rate + "%",
-        a.commission_earned.toFixed(2),
-        a.commission_paid.toFixed(2),
-        a.pending_payout.toFixed(2),
-      ]);
-      break;
-    }
-    default:
-      return res.status(400).json({
-        error:
-          "Unknown report type. Use: daily, monthly, debtors, tax, commissions",
-      });
+
+    let csv = headers.join(",") + "\n";
+    rows.forEach((row) => {
+      csv += row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",") + "\n";
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${type}-report-${new Date().toISOString().split("T")[0]}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    console.error("Export report error:", e);
+    res.status(500).json({ error: e.message });
   }
-
-  // Generate CSV
-  let csv = headers.join(",") + "\n";
-  rows.forEach((row) => {
-    csv +=
-      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",") +
-      "\n";
-  });
-
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${type}-report-${new Date().toISOString().split("T")[0]}.csv"`,
-  );
-  res.send(csv);
 });
 
 // ═══════════════════════════════════════
@@ -840,12 +794,10 @@ router.get("/reports/export/:type", (req, res) => {
 // ═══════════════════════════════════════
 
 // Get payment history for customer
-router.get("/:customerId/payments", (req, res) => {
+router.get("/:customerId/payments", async (req, res) => {
   try {
-    const payments = billing.store.payments
-      .filter((p) => p.customer_id === req.params.customerId)
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    res.json(payments);
+    const payments = await billingData.listPayments({ customerId: req.params.customerId });
+    res.json(payments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1346,13 +1298,16 @@ router.get("/:customerId/available-plans", async (req, res) => {
         change_type: !currentPlan ? "new" : parseFloat(p.price) > parseFloat(currentPlan.price||0) ? "upgrade" : parseFloat(p.price) < parseFloat(currentPlan.price||0) ? "downgrade" : "same"
       })));
     }
-    const plans = billing.store.service_plans.filter((p) => !p.archived);
-    const subscription = billing.store.subscriptions.find(
+
+    const allPlans = await billingData.listPlans();
+    const plans = allPlans.filter((p) => !p.archived);
+    const allSubscriptions = await billingData.listSubscriptions();
+    const subscription = allSubscriptions.find(
       (s) => s.customer_id === req.params.customerId && s.status === "active",
     );
     const currentPlanId = subscription?.plan_id;
     const currentPlan = currentPlanId
-      ? billing.store.service_plans.find((p) => p.id === currentPlanId)
+      ? allPlans.find((p) => p.id === currentPlanId)
       : null;
 
     const availablePlans = plans.map((p) => ({
@@ -1360,9 +1315,9 @@ router.get("/:customerId/available-plans", async (req, res) => {
       is_current: p.id === currentPlanId,
       change_type: !currentPlan
         ? "new"
-        : p.price > currentPlan.price
+        : billingData.toNumber(p.price, 0) > billingData.toNumber(currentPlan.price, 0)
           ? "upgrade"
-          : p.price < currentPlan.price
+          : billingData.toNumber(p.price, 0) < billingData.toNumber(currentPlan.price, 0)
             ? "downgrade"
             : "same",
     }));
@@ -1393,12 +1348,14 @@ router.post("/:customerId/change-plan", async (req, res) => {
       oldPlan = oldPlanRes.rows[0] || null;
       await db.query("UPDATE subscriptions SET plan_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [plan_id, subscription.id]);
     } else {
-      subscription = billing.store.subscriptions.find(s => s.customer_id === customerId && s.status === 'active');
+      const allSubscriptions = await billingData.listSubscriptions();
+      subscription = allSubscriptions.find(s => s.customer_id === customerId && s.status === 'active');
       if (!subscription) return res.status(404).json({ error: "No active subscription found" });
-      plan = billing.store.service_plans.find(p => p.id === plan_id);
+      const allPlans = await billingData.listPlans();
+      plan = allPlans.find(p => p.id === plan_id);
       if (!plan) return res.status(404).json({ error: "Plan not found" });
-      oldPlan = billing.store.service_plans.find(p => p.id === subscription.plan_id);
-      billing.store.subscriptions = billing.store.subscriptions.map(s => s.id === subscription.id ? { ...s, plan_id, updated_at: new Date().toISOString() } : s);
+      oldPlan = allPlans.find(p => p.id === subscription.plan_id);
+      await billingData.updateSubscription(subscription.id, { plan_id, updated_at: new Date().toISOString() });
     }
 
     logger.info("Plan changed", { customer_id: customerId, old_plan: oldPlan?.name, new_plan: plan.name });

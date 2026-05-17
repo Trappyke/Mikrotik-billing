@@ -629,6 +629,64 @@ async function recordUsage(data) {
   return backend.recordUsage(data);
 }
 
+async function findCustomerByPppoeUsername(username) {
+  if (usesRepositoryBackend() && global.db) {
+    const result = await global.db.query(
+      `SELECT c.*, s.id as sub_id, s.pppoe_username, s.pppoe_password, s.status as sub_status,
+              s.start_date, s.throttled, s.throttle_reason, s.plan_id,
+              p.name as plan_name, p.speed_up, p.speed_down, p.price, p.quota_gb
+       FROM subscriptions s
+       JOIN customers c ON c.id = s.customer_id
+       LEFT JOIN service_plans p ON p.id = s.plan_id
+       WHERE s.pppoe_username = $1 AND s.status = 'active'
+       LIMIT 1`,
+      [username],
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      customer: normalizeCustomer(row),
+      subscription: normalizeSubscription({
+        id: row.sub_id,
+        customer_id: row.id,
+        plan_id: row.plan_id,
+        pppoe_username: row.pppoe_username,
+        pppoe_password: row.pppoe_password,
+        status: row.sub_status,
+        start_date: row.start_date,
+        throttled: row.throttled,
+        throttle_reason: row.throttle_reason,
+      }),
+      plan: normalizePlan({
+        id: row.plan_id,
+        name: row.plan_name,
+        speed_up: row.speed_up,
+        speed_down: row.speed_down,
+        price: row.price,
+        quota_gb: row.quota_gb,
+      }),
+    };
+  }
+
+  const store = getStore();
+  const subscription = store.subscriptions.find(
+    (s) => s.pppoe_username === username && s.status === "active",
+  );
+  if (!subscription) return null;
+  const customer = store.customers.find((c) => c.id === subscription.customer_id);
+  if (!customer) return null;
+  const plan = store.service_plans.find((p) => p.id === subscription.plan_id) || null;
+  return {
+    customer: normalizeCustomer(customer),
+    subscription: normalizeSubscription({
+      ...subscription,
+      customer,
+      plan,
+    }),
+    plan: normalizePlan(plan),
+  };
+}
+
 module.exports = {
   usesRepositoryBackend,
   listCustomers,
@@ -660,6 +718,7 @@ module.exports = {
   getDashboardStats,
   listUsageRecords,
   recordUsage,
+  findCustomerByPppoeUsername,
   normalizeCustomer,
   normalizePlan,
   normalizeSubscription,
