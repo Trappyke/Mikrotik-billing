@@ -750,7 +750,7 @@ const startServer = async () => {
         }
 
         const enableRouterConnectivity =
-          process.env.ENABLE_ROUTER_CONNECTIVITY === "true";
+          process.env.ENABLE_ROUTER_CONNECTIVITY !== "false";
         if (enableRouterConnectivity) {
           try {
             const routerConnectivityService = require("./services/routerConnectivity");

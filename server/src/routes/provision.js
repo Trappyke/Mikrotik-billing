@@ -2043,11 +2043,11 @@ router.get("/v1/:slug/status", async (req, res) => {
       const r = routers[0];
       return res.json({
         connected: true,
-        status: "online",
-        message: "Router connected",
+        status: r.is_online ? "online" : "offline",
+        message: r.is_online ? "Router online" : "Router offline",
         lastSeen: r.updated_at,
         ip: r.ip_address,
-        router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+        router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, is_online: r.is_online, has_connection: !!r.linked_mikrotik_connection_id },
       });
     }
 
@@ -2084,12 +2084,30 @@ async function findRoutersByTenant(tenantId, slug) {
   // Try tenant_id first
   try {
     const result = await db.query(
-      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC",
+      `SELECT r.id, r.name, r.model, r.mac_address, r.ip_address,
+              r.linked_mikrotik_connection_id, r.provision_status, r.updated_at,
+              COALESCE(mc.is_online, false) as is_online
+       FROM routers r
+       LEFT JOIN mikrotik_connections mc ON mc.id = r.linked_mikrotik_connection_id
+       WHERE r.tenant_id = $1 AND r.provision_status = 'online'
+       ORDER BY r.updated_at DESC`,
       [tenantId],
     );
     if (result.rows.length > 0) return result.rows;
   } catch (e) {
-    // tenant_id column might not exist
+    // tenant_id column might not exist, try without it
+    try {
+      const result = await db.query(
+        `SELECT r.id, r.name, r.model, r.mac_address, r.ip_address,
+                r.linked_mikrotik_connection_id, r.provision_status, r.updated_at,
+                COALESCE(mc.is_online, false) as is_online
+         FROM routers r
+         LEFT JOIN mikrotik_connections mc ON mc.id = r.linked_mikrotik_connection_id
+         WHERE r.linked_mikrotik_connection_id IS NOT NULL
+         ORDER BY r.updated_at DESC`,
+      );
+      if (result.rows.length > 0) return result.rows;
+    } catch (e2) {}
   }
   // Fallback: find by provision_logs token
   try {

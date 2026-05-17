@@ -492,23 +492,27 @@ export default function RouterLink() {
             <div className="flex items-center gap-3">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  isLinked
+                  isLinked && connectionStatus?.router?.is_online !== false
                     ? "bg-green-500 shadow-lg shadow-green-500/30"
-                    : connectionStatus?.connected
+                    : connectionStatus?.connected && connectionStatus?.router?.is_online !== false
                       ? "bg-green-500 animate-pulse"
-                      : polling
-                        ? "bg-amber-500 animate-pulse"
-                        : "bg-zinc-600"
+                      : connectionStatus?.connected && connectionStatus?.router?.is_online === false
+                        ? "bg-red-500"
+                        : polling
+                          ? "bg-amber-500 animate-pulse"
+                          : "bg-zinc-600"
                 }`}
               />
               <span className="text-sm text-zinc-300">
-                {isLinked
-                  ? "Fully Linked & Managed"
-                  : connectionStatus?.connected
+                {isLinked && connectionStatus?.router?.is_online !== false
+                  ? "Online & Managed"
+                  : connectionStatus?.connected && connectionStatus?.router?.is_online !== false
                     ? "Router Connected"
-                    : polling
-                      ? "Listening..."
-                      : "Not Monitoring"}
+                    : connectionStatus?.connected && connectionStatus?.router?.is_online === false
+                      ? "Router Offline"
+                      : polling
+                        ? "Listening..."
+                        : "Not Monitoring"}
               </span>
             </div>
 
@@ -687,9 +691,12 @@ export default function RouterLink() {
                   {allRouters.map((r) => (
                     <div key={r.id} className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-2 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-xs">
-                        <div className={`w-2 h-2 rounded-full ${r.provision_status === 'online' ? 'bg-green-500' : 'bg-zinc-500'}`} />
+                        <div className={`w-2 h-2 rounded-full ${r.is_online ? 'bg-green-500' : r.provision_status === 'online' ? 'bg-amber-500' : 'bg-zinc-500'}`} />
                         <span className="text-white">{r.name}</span>
                         <span className="text-zinc-500">{r.model || ""}</span>
+                        <span className={`text-xs ${r.is_online ? 'text-green-400' : 'text-red-400'}`}>
+                          {r.is_online ? 'ONLINE' : r.provision_status === 'online' ? 'OFFLINE' : r.provision_status}
+                        </span>
                       </div>
                       <div className="text-xs text-zinc-500">
                         <span>{r.mac_address || "no MAC"}</span>
