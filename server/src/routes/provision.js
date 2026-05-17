@@ -2036,9 +2036,11 @@ router.get("/v1/:slug/report", async (req, res) => {
         existingRouter = await db.query("SELECT id FROM routers WHERE ip_address = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1", [routerIp]);
       }
 
-      const projectResult = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1");
-      const projectId = projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
       const routerName = model || `Router-${routerIdentifier}`;
+
+      // Try to get a project_id, but don't fail if projects don't exist
+      let projectId = null;
+      try { const pr = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1"); projectId = pr.rows[0]?.id || null; } catch (e) {}
 
       if (existingRouter && existingRouter.rows.length > 0) {
         routerId = existingRouter.rows[0].id;
@@ -2425,20 +2427,20 @@ router.get("/v1/report", async (req, res) => {
     }
 
     let routerId = null;
-    if (tenant && mac) {
+    if (tenant) {
       try {
-        const projectResult = await db.query(
-          "SELECT id FROM projects ORDER BY created_at ASC LIMIT 1",
-        );
-        const projectId =
-          projectResult.rows.length > 0 ? projectResult.rows[0].id : null;
-        const existingRouter = await db.query(
-          "SELECT * FROM routers WHERE mac_address = $1 LIMIT 1",
-          [mac],
-        );
-        const routerName =
-          model || `Router-${(mac || "unknown").replace(/:/g, "-")}`;
+        let projectId = null;
+        try { const pr = await db.query("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1"); projectId = pr.rows[0]?.id || null; } catch (e) {}
         const routerIp = getClientIp(req);
+        const routerIdentifier = mac || `ip-${routerIp.replace(/[.:]/g, "-")}`;
+        let existingRouter = null;
+        if (mac) {
+          existingRouter = await db.query("SELECT * FROM routers WHERE mac_address = $1 LIMIT 1", [mac]);
+        }
+        if (!existingRouter || existingRouter.rows.length === 0) {
+          existingRouter = await db.query("SELECT id FROM routers WHERE ip_address = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1", [routerIp]);
+        }
+        const routerName = model || `Router-${routerIdentifier}`;
 
         if (existingRouter.rows.length > 0) {
           routerId = existingRouter.rows[0].id;
