@@ -2100,13 +2100,11 @@ router.get("/v1/:slug/routers", async (req, res) => {
       return res.json({ error: "Tenant not found", routers: [] });
     }
 
-    // Get routers by tenant_id
     const byTenant = await db.query(
       "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, tenant_id, created_at, updated_at FROM routers WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 20",
       [tenant.id],
     );
 
-    // Also check provision_logs for any router IDs linked to this slug
     const byLogs = await db.query(
       "SELECT DISTINCT router_id FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL",
       [slug.substring(0, 16)],
@@ -2120,6 +2118,107 @@ router.get("/v1/:slug/routers", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message, routers: [] });
   }
+});
+
+// GET /v1/:slug/watch — SSE stream that watches for router discovery
+router.get("/v1/:slug/watch", async (req, res) => {
+  const { slug } = req.params;
+  const db = getDb();
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent("connected", { slug, message: "Watching for router..." });
+
+  let found = false;
+  let attempts = 0;
+  const maxAttempts = 120; // 10 minutes (120 x 5s)
+
+  const poll = setInterval(async () => {
+    attempts++;
+    if (found || attempts > maxAttempts) {
+      clearInterval(poll);
+      if (!found) {
+        sendEvent("timeout", { message: "No router discovered after 10 minutes. Check the command on your MikroTik." });
+      }
+      res.end();
+      return;
+    }
+
+    try {
+      const tenant = await findTenantBySlugOrKey(slug, null);
+      if (!tenant) {
+        sendEvent("error", { message: "Tenant not found" });
+        clearInterval(poll);
+        res.end();
+        return;
+      }
+
+      // Check for new routers
+      const routerResult = await db.query(
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1",
+        [tenant.id],
+      );
+
+      if (routerResult.rows.length > 0) {
+        const r = routerResult.rows[0];
+        found = true;
+        clearInterval(poll);
+        sendEvent("discovered", {
+          connected: true,
+          router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+          message: `Router ${r.name} discovered!`,
+        });
+        sendEvent("done", { message: "Discovery complete" });
+        res.end();
+        return;
+      }
+
+      // Also check provision_logs as fallback
+      const logResult = await db.query(
+        "SELECT router_id, created_at FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+        [slug.substring(0, 16)],
+      );
+
+      if (logResult.rows.length > 0 && logResult.rows[0].router_id) {
+        const rResult = await db.query(
+          "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
+          [logResult.rows[0].router_id],
+        );
+        if (rResult.rows.length > 0) {
+          const r = rResult.rows[0];
+          found = true;
+          clearInterval(poll);
+          sendEvent("discovered", {
+            connected: true,
+            router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+            message: `Router ${r.name} found via logs!`,
+          });
+          sendEvent("done", { message: "Discovery complete" });
+          res.end();
+          return;
+        }
+      }
+
+      // Send heartbeat
+      sendEvent("heartbeat", { attempts, remaining: maxAttempts - attempts, message: `Still watching... (${attempts}/${maxAttempts})` });
+    } catch (e) {
+      sendEvent("error", { message: e.message });
+    }
+  }, 5000);
+
+  req.on("close", () => {
+    clearInterval(poll);
+    found = true;
+  });
 });
 
 // GET /v1/:slug/sync

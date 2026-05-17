@@ -63,6 +63,9 @@ export default function RouterLink() {
   const [manualKey, setManualKey] = useState("");
   const [debugInfo, setDebugInfo] = useState(null);
   const [allRouters, setAllRouters] = useState([]);
+  const [watchAttempts, setWatchAttempts] = useState(0);
+  const [watchRemaining, setWatchRemaining] = useState(0);
+  const eventSourceRef = React.useRef(null);
 
   useEffect(() => {
     fetchTenant();
@@ -175,8 +178,7 @@ export default function RouterLink() {
       );
       toast.success("Router upgraded to full management");
       localStorage.setItem("router_link_mgmt_user", mgmtUser);
-      // Refresh status
-      checkConnection();
+      manualCheck();
     } catch (e) {
       toast.error(e.response?.data?.error || "Upgrade failed");
     } finally {
@@ -184,31 +186,79 @@ export default function RouterLink() {
     }
   };
 
-  const checkConnection = async (keyOverride) => {
-    const key = keyOverride || apiKey;
-    if (!key) return null;
-    try {
-      const slugPath = tenantSlug ? `/v1/${tenantSlug}/status` : "/v1/status";
-      const url = `${API}/router${slugPath}?t=${Date.now()}`;
-      const { data } = await axios.get(url, {
-        headers: { Authorization: "Bearer " + key },
-      });
-      setConnectionStatus(data);
-      setDebugInfo({ key: key.substring(0, 16) + "...", url, response: data });
+  const startWatching = () => {
+    if (!tenantSlug) return;
+    // Close existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    const url = `${window.location.origin}/api/router/v1/${tenantSlug}/watch`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    es.addEventListener("connected", (e) => {
+      const data = JSON.parse(e.data);
+      setConnectionStatus({ connected: false, status: "watching", message: data.message });
       setLastError(null);
-      setCheckCount((c) => c + 1);
+    });
 
-      // Also fetch ALL routers for this tenant
-      fetchAllRouters();
+    es.addEventListener("discovered", (e) => {
+      const data = JSON.parse(e.data);
+      setConnectionStatus(data);
+      setDebugInfo({ event: "discovered", data });
+      es.close();
+      eventSourceRef.current = null;
+      toast.success(`Router ${data.router?.name || ""} discovered!`);
+    });
 
-      return data;
-    } catch (e) {
-      const msg = e.response?.data?.error || e.message;
-      setLastError(`${msg} (HTTP ${e.response?.status || "network error"})`);
-      setDebugInfo({ key: (keyOverride || apiKey).substring(0, 16) + "...", error: msg, status: e.response?.status });
-      return null;
+    es.addEventListener("heartbeat", (e) => {
+      const data = JSON.parse(e.data);
+      setWatchAttempts(data.attempts);
+      setWatchRemaining(data.remaining);
+    });
+
+    es.addEventListener("timeout", (e) => {
+      const data = JSON.parse(e.data);
+      setConnectionStatus({ connected: false, status: "timeout", message: data.message });
+      setLastError(data.message);
+      es.close();
+      eventSourceRef.current = null;
+    });
+
+    es.addEventListener("error", (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setLastError(data.message);
+      } catch (_) {
+        setLastError("Watch connection lost. Reconnecting...");
+      }
+    });
+
+    es.onerror = () => {
+      // EventSource will auto-reconnect
+    };
+  };
+
+  const stopWatching = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopWatching();
+  }, []);
+
+  // Auto-start watching when we have both slug and key
+  useEffect(() => {
+    if (tenantSlug && apiKey) {
+      setPolling(true);
+      startWatching();
+    }
+  }, [tenantSlug, apiKey]);
 
   const fetchAllRouters = async () => {
     if (!tenantSlug) return;
@@ -220,25 +270,33 @@ export default function RouterLink() {
     }
   };
 
+  // Manual check (in addition to SSE watch)
   const manualCheck = async () => {
     setLastError(null);
-    const result = await checkConnection();
-    if (result?.connected) {
-      toast.success("Router found!");
-    } else if (result) {
-      toast.info("Still waiting for router...");
-    } else {
-      toast.error("Check failed - see details below");
+    if (!tenantSlug || !apiKey) {
+      toast.error("No API key configured");
+      return;
+    }
+    try {
+      const url = `${API}/router/v1/${tenantSlug}/status?t=${Date.now()}`;
+      const { data } = await axios.get(url, { headers: { Authorization: "Bearer " + apiKey } });
+      setConnectionStatus(data);
+      setDebugInfo({ url, response: data });
+      setCheckCount((c) => c + 1);
+      fetchAllRouters();
+      if (data.connected) {
+        toast.success("Router found!");
+      } else {
+        toast.info("Still waiting...");
+      }
+    } catch (e) {
+      const msg = e.response?.data?.error || e.message;
+      setLastError(`${msg} (HTTP ${e.response?.status || "network error"})`);
     }
   };
 
-  useEffect(() => {
-    if (apiKey && polling) {
-      checkConnection();
-      const interval = setInterval(checkConnection, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [apiKey, polling]);
+  // SSE watch handles polling now
+  // Manual check available via the Check Now button
 
   const copyApiKey = () => {
     navigator.clipboard.writeText(apiKey);
@@ -571,13 +629,15 @@ export default function RouterLink() {
               </Card>
             )}
 
-            {/* Waiting state */}
+            {/* Waiting / Watching state */}
             {polling && !connectionStatus?.connected && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-amber-400">
                   <Loader2 className="w-5 h-5 animate-spin" />
                   <span className="text-sm">
-                    Listening for router connection... ({checkCount} checks)
+                    {connectionStatus?.status === "watching"
+                      ? `Watching for router... (${watchAttempts} checks, ${Math.ceil((watchRemaining * 5) / 60)}m remaining)`
+                      : `Listening... (${checkCount} checks)`}
                   </span>
                 </div>
                 <Button
@@ -593,24 +653,39 @@ export default function RouterLink() {
                     <p className="text-xs text-red-400">{lastError}</p>
                   </div>
                 )}
-                {checkCount > 5 && (
+                {checkCount > 3 && (
                   <Card className="bg-amber-500/5 border-amber-500/30">
                     <CardContent className="p-3 space-y-2">
                       <p className="text-xs text-amber-300 font-medium">Still waiting?</p>
                       <p className="text-xs text-zinc-400">
-                        The key on this page might not match the one you pasted on the MikroTik. Generate a new key and re-run the command.
+                        Generate a fresh key and re-run the command on your MikroTik.
                       </p>
                       <Button onClick={generateKey} disabled={generating} className="gap-2 w-full">
                         {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-                        Generate New Key & Re-run Command
+                        Generate New Key & Re-run
                       </Button>
                     </CardContent>
                   </Card>
                 )}
-                {connectionStatus?.hint && (
-                  <p className="text-xs text-zinc-500">{connectionStatus.hint}</p>
-                )}
               </div>
+            )}
+
+            {/* SSE Timeout state */}
+            {connectionStatus?.status === "timeout" && (
+              <Card className="bg-red-500/5 border-red-500/30">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm text-red-300 font-medium">Watch Session Ended</p>
+                      <p className="text-xs text-red-400/70 mt-1">{connectionStatus.message}</p>
+                    </div>
+                  </div>
+                  <Button onClick={() => { setPolling(true); startWatching(); }} className="gap-2 w-full">
+                    Start New Watch Session
+                  </Button>
+                </CardContent>
+              </Card>
             )}
 
             {connectionStatus?.connected && isLinked && (
