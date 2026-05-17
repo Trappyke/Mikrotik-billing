@@ -110,20 +110,13 @@ export default function RouterLink() {
   const buildCommand = () => {
     const mode = appUrl.startsWith("https") ? "https" : "http";
     const certFlag = appUrl.startsWith("https") ? " check-certificate=no" : "";
-    let extraLines = "";
+    let prefix = "";
 
     if (mgmtUser && mgmtPass) {
-      extraLines = `\n# Step 0 (OPTIONAL): Set management credentials FIRST\n:global ztpMgmtUser "${mgmtUser}"; :global ztpMgmtPass "${mgmtPass}"\n`;
+      prefix = `:global ztpMgmtUser "${mgmtUser}"; :global ztpMgmtPass "${mgmtPass}"; `;
     }
 
-    return `${extraLines}# Step 1: Download the install script
-/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=${mode}${certFlag}
-
-# Step 2: Run the install script
-/import file-name="install.rsc"
-
-# Step 3: Clean up
-/file remove "install.rsc"`;
+    return `${prefix}/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path=install.rsc mode=${mode}${certFlag}; :delay 4s; /import file-name=install.rsc; :delay 1s; /file remove install.rsc`;
   };
 
   const copyCommand = () => {
@@ -333,7 +326,7 @@ export default function RouterLink() {
               Run on Your MikroTik
             </CardTitle>
             <CardDescription>
-              Run these commands one at a time in your MikroTik terminal. Each line is a separate command.
+              Paste this single command into your MikroTik terminal (SSH or Winbox). It runs immediately.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
