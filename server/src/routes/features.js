@@ -6,31 +6,28 @@ const express = require("express");
 const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
 const multiStore = require("../db/multiFeatureStore");
-const billing = require("../db/billingStore");
+const billingData = require("../services/billingData");
 const slack = require("../services/slackNotifier");
+const db = global.dbAvailable ? global.db : require("../db/memory");
 
 // ═══════════════════════════════════════
 // BRANCHES
 // ═══════════════════════════════════════
-router.get("/branches", (req, res) => {
+router.get("/branches", async (req, res) => {
+  const allCustomers = await billingData.listCustomers();
+  const allPayments = await billingData.listPayments();
+  const allInvoices = await billingData.listInvoices();
+
   const branchStats = multiStore.branches.map((b) => {
-    const customers = billing.store.customers.filter(
-      (c) => c.branch_id === b.id,
-    ).length;
-    const routers = billing.store.routers
-      ? billing.store.routers.filter((r) => r.branch_id === b.id).length
-      : 0;
-    const revenue = billing.store.payments
+    const branchCustomers = allCustomers.filter((c) => c.branch_id === b.id);
+    const customerIds = branchCustomers.map((c) => c.id);
+    const revenue = allPayments
       .filter((p) => {
-        const inv = billing.store.invoices.find((i) => i.id === p.invoice_id);
-        return (
-          inv &&
-          billing.store.customers.find((c) => c.id === inv.customer_id)
-            ?.branch_id === b.id
-        );
+        const inv = allInvoices.find((i) => i.id === p.invoice_id);
+        return inv && customerIds.includes(inv.customer_id);
       })
-      .reduce((sum, p) => sum + p.amount, 0);
-    return { ...b, customer_count: customers, router_count: routers, revenue };
+      .reduce((sum, p) => sum + billingData.toNumber(p.amount, 0), 0);
+    return { ...b, customer_count: branchCustomers.length, router_count: 0, revenue };
   });
   res.json(branchStats);
 });
@@ -103,9 +100,9 @@ router.get("/vouchers", (req, res) => {
   res.json(filtered);
 });
 
-router.post("/vouchers/generate", (req, res) => {
+router.post("/vouchers/generate", async (req, res) => {
   const { count, plan_id, agent_id } = req.body;
-  const plan = billing.store.service_plans.find((p) => p.id === plan_id);
+  const plan = await billingData.getPlanById(plan_id);
   if (!plan) return res.status(404).json({ error: "Plan not found" });
 
   const generated = [];
@@ -137,7 +134,7 @@ router.post("/vouchers/generate", (req, res) => {
   res.json({ generated, total: generated.length });
 });
 
-router.post("/vouchers/redeem", (req, res) => {
+router.post("/vouchers/redeem", async (req, res) => {
   const { code, customer_id } = req.body;
   const voucher = multiStore.vouchers.find(
     (v) => v.code === code && v.status !== "redeemed",
@@ -153,12 +150,13 @@ router.post("/vouchers/redeem", (req, res) => {
   voucher.redeemed_at = new Date().toISOString();
 
   // Activate customer subscription
-  const customer = billing.store.customers.find((c) => c.id === customer_id);
+  const customer = await billingData.getCustomerById(customer_id);
   if (customer) {
-    const plan = billing.store.service_plans.find(
+    const allPlans = await billingData.listPlans();
+    const plan = allPlans.find(
       (p) => p.name === voucher.plan_name,
     );
-    billing.createSubscription({
+    await billingData.createSubscription({
       customer_id: customer_id,
       plan_id: plan?.id,
       status: "active",
@@ -432,8 +430,10 @@ router.post("/auto-suspend/run", async (req, res) => {
   const { warn_days, throttle_days, suspend_days } = multiStore.graceConfig;
   const results = { warned: [], throttled: [], suspended: [] };
 
-  // Find overdue invoices
-  const overdueInvoices = billing.store.invoices.filter(
+  const allInvoices = await billingData.listInvoices();
+  const allSubscriptions = await billingData.listSubscriptions();
+
+  const overdueInvoices = allInvoices.filter(
     (i) => i.status !== "paid" && new Date(i.due_date) < new Date(),
   );
 
@@ -442,7 +442,7 @@ router.post("/auto-suspend/run", async (req, res) => {
       (Date.now() - new Date(invoice.due_date).getTime()) /
         (24 * 60 * 60 * 1000),
     );
-    const subs = billing.store.subscriptions.filter(
+    const subs = allSubscriptions.filter(
       (s) => s.customer_id === invoice.customer_id && s.status === "active",
     );
 
@@ -494,10 +494,10 @@ router.post("/auto-suspend/run", async (req, res) => {
 // ═══════════════════════════════════════
 // CUSTOMER BRANCH ASSIGNMENT
 // ═══════════════════════════════════════
-router.put("/customers/:id/branch", (req, res) => {
-  const customer = billing.store.customers.find((c) => c.id === req.params.id);
+router.put("/customers/:id/branch", async (req, res) => {
+  const customer = await billingData.getCustomerById(req.params.id);
   if (!customer) return res.status(404).json({ error: "Customer not found" });
-  customer.branch_id = req.body.branch_id || null;
+  await billingData.updateCustomer(req.params.id, { branch_id: req.body.branch_id || null });
   res.json(customer);
 });
 
@@ -523,7 +523,7 @@ router.post("/setup", async (req, res) => {
     if (plans && plans.length > 0) {
       for (const plan of plans) {
         if (!plan.name) continue;
-        billing.store.plans.push({
+        await billingData.createPlan({
           id: uuidv4(),
           name: plan.name,
           speed_up: plan.speedUp || "1M",

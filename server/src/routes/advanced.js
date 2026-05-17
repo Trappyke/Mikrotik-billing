@@ -8,7 +8,7 @@ const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const walletStore = require("../db/walletStore");
 const backupStore = require("../db/backupStore");
-const billing = require("../db/billingStore");
+const billingData = require("../services/billingData");
 const { triggerMessage } = require("./sms");
 
 // Configure multer for file uploads
@@ -54,9 +54,7 @@ router.post("/wallet/:customerId/topup", async (req, res) => {
   );
 
   // Send confirmation SMS/WhatsApp
-  const customer = billing.store.customers.find(
-    (c) => c.id === req.params.customerId,
-  );
+  const customer = await billingData.getCustomerById(req.params.customerId);
   if (customer?.phone) {
     triggerMessage("payment_received", {
       customer,
@@ -163,15 +161,20 @@ router.get("/map/data", async (req, res) => {
         branch_id: c.branch_id,
       }));
     } else {
+      const allCustomers = await billingData.listCustomers();
+      const allSubscriptions = await billingData.listSubscriptions();
+      const allPlans = await billingData.listPlans();
+
       customers = await Promise.all(
-        billing.store.customers.map(async (c) => {
-          const sub = billing.store.subscriptions.find(
+        allCustomers.map(async (c) => {
+          const sub = allSubscriptions.find(
             (s) => s.customer_id === c.id && s.status === "active",
           );
           const wallet = await walletStore.getWallet(c.id);
           const isSuspended =
             sub?.status === "suspended" || wallet?.status === "suspended";
           const isThrottled = sub?.throttled;
+          const plan = sub?.plan_id ? allPlans.find((p) => p.id === sub.plan_id) : null;
 
           return {
             id: c.id,
@@ -185,10 +188,7 @@ router.get("/map/data", async (req, res) => {
                 ? "throttled"
                 : "active",
             phone: c.phone,
-            plan: sub?.plan
-              ? billing.store.service_plans.find((p) => p.id === sub.plan_id)
-                  ?.name
-              : null,
+            plan: plan?.name || null,
             branch_id: c.branch_id,
           };
         }),
@@ -220,8 +220,8 @@ router.get("/map/data", async (req, res) => {
   }
 });
 
-router.put("/map/customer/:id", (req, res) => {
-  const customer = billing.store.customers.find((c) => c.id === req.params.id);
+router.put("/map/customer/:id", async (req, res) => {
+  const customer = await billingData.getCustomerById(req.params.id);
   if (!customer) return res.status(404).json({ error: "Customer not found" });
 
   if (req.body.lat !== undefined) customer.lat = req.body.lat;

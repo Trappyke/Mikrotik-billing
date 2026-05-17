@@ -430,12 +430,12 @@ router.get("/usage/summary", async (req, res) => {
 // ═══════════════════════════════════════
 router.post("/sync-from-billing", async (req, res) => {
   try {
-    const billing = require("../db/billingStore");
+    const billingData = require("../services/billingData");
     const created = [];
     const skipped = [];
 
-    // Get all active subscriptions
-    const subs = billing.store.subscriptions.filter(
+    const allSubscriptions = await billingData.listSubscriptions();
+    const subs = allSubscriptions.filter(
       (s) => s.status === "active" && s.pppoe_username,
     );
 
@@ -451,10 +451,8 @@ router.post("/sync-from-billing", async (req, res) => {
         continue;
       }
 
-      // Get plan
-      const plan = billing.store.service_plans.find(
-        (p) => p.id === sub.plan_id,
-      );
+      const allPlans = await billingData.listPlans();
+      const plan = allPlans.find((p) => p.id === sub.plan_id);
 
       // Create RADIUS user
       await getDb().query(

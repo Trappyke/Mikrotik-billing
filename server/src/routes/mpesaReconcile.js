@@ -3,7 +3,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require("uuid");
 
 const pgDb = global.dbAvailable ? require("../db") : null;
-const memStore = !global.dbAvailable ? require("../db/billingStore") : null;
+const billingData = !global.dbAvailable ? require("../services/billingData") : null;
 
 // Normalize query results — PG returns { rows }, billingStore returns arrays directly
 async function query(text, params) {
@@ -31,10 +31,10 @@ async function findPendingInvoiceByAmount(amount) {
   }
 
   // In-memory fallback
-  if (!memStore) return null;
-  const invoices = memStore.invoices || [];
-  const customers = memStore.customers || [];
-  const payments = memStore.payments || [];
+  if (!billingData) return null;
+  const invoices = await billingData.listInvoices();
+  const customers = await billingData.listCustomers();
+  const payments = await billingData.listPayments();
 
   // Find pending invoice where remaining = amount
   const match = invoices.find((inv) => {
@@ -62,36 +62,17 @@ async function findPendingInvoiceByAmount(amount) {
 }
 
 async function insertPayment(payment) {
-  const id = uuidv4();
   if (pgDb) {
+    const id = uuidv4();
     await pgDb.query(
       `INSERT INTO payments (id, invoice_id, customer_id, amount, method, reference, receipt_number, notes, received_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [
-        id,
-        payment.invoice_id,
-        payment.customer_id,
-        payment.amount,
-        payment.method,
-        payment.reference,
-        payment.receipt_number,
-        payment.notes,
-      ],
+      [id, payment.invoice_id, payment.customer_id, payment.amount, payment.method, payment.reference, payment.receipt_number, payment.notes],
     );
-  } else if (memStore) {
-    memStore.payments.push({
-      id,
-      invoice_id: payment.invoice_id,
-      customer_id: payment.customer_id,
-      amount: payment.amount,
-      method: payment.method,
-      reference: payment.reference || "",
-      receipt_number: payment.receipt_number || "",
-      notes: payment.notes || "",
-      received_at: new Date().toISOString(),
-    });
+    return id;
   }
-  return id;
+  const result = await billingData.createPayment(payment);
+  return result?.id || payment.id;
 }
 
 async function updateInvoiceStatus(invoiceId, status) {
@@ -100,12 +81,8 @@ async function updateInvoiceStatus(invoiceId, status) {
       `UPDATE invoices SET status = $1, updated_at = NOW() WHERE id = $2`,
       [status, invoiceId],
     );
-  } else if (memStore) {
-    const idx = (memStore.invoices || []).findIndex((i) => i.id === invoiceId);
-    if (idx >= 0) {
-      memStore.invoices[idx].status = status;
-      memStore.invoices[idx].updated_at = new Date().toISOString();
-    }
+  } else if (billingData) {
+    await billingData.updateInvoice(invoiceId, { status });
   }
 }
 
@@ -190,8 +167,9 @@ router.get("/recent", async (req, res) => {
       );
       return res.json(result.rows);
     }
-    if (memStore) {
-      const payments = (memStore.payments || [])
+    if (billingData) {
+      const allPayments = await billingData.listPayments();
+      const payments = allPayments
         .filter((p) => p.method === "mpesa")
         .slice(-50)
         .reverse();
