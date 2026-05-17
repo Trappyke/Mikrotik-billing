@@ -341,7 +341,7 @@ router.post("/:customerId/tickets", async (req, res) => {
       triggerSMS("payment_received", {
         customer,
         payment: { reference: ticketNumber },
-      }).catch(() => {});
+      }).catch((e) => console.error('customerPortal.js async op failed:', e?.message || e));
     }
 
     res.status(201).json(ticketResult.rows[0]);

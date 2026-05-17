@@ -271,7 +271,7 @@ router.post("/customers", async (req, res) => {
           `UPDATE customers SET portal_username = $1, portal_pin_hash = $2 WHERE id = $3`,
           [portalUsername, pinHash, customer.id],
         )
-        .catch(() => {});
+        .catch((e) => console.error('billing.js async op failed:', e?.message || e));
     } else {
       const store = db._getStore ? db._getStore() : {};
       if (store.customers) {
@@ -289,7 +289,7 @@ router.post("/customers", async (req, res) => {
     const planName = subscription?.plan_name || req.body.plan_id || null;
     slack
       .customerCreated(customer.name, planName, customer.phone)
-      .catch(() => {});
+      .catch((e) => console.error('billing.js async op failed:', e?.message || e));
 
     res.status(201).json({
       ...customer,
@@ -1228,7 +1228,7 @@ router.post("/payments", async (req, res) => {
       customer_id: payment.customer_id,
       amount: payment.amount,
       invoice_id: payment.invoice_id,
-    }).catch(() => {});
+    }).catch((e) => console.error('billing.js async op failed:', e?.message || e));
 
     // Slack notification
     const customerName = customer?.name || "Unknown";
@@ -1236,7 +1236,7 @@ router.post("/payments", async (req, res) => {
       invoice?.invoice_number || payment.invoice_id || "N/A";
     slack
       .paymentReceived(customerName, payment.amount, invoiceNumber)
-      .catch(() => {});
+      .catch((e) => console.error('billing.js async op failed:', e?.message || e));
 
     res.status(201).json(payment);
   } catch (e) {

@@ -216,7 +216,7 @@ router.post("/forgot-pin", async (req, res) => {
       await triggerSMS("password_reset", {
         customer,
         reset_code: resetCode,
-      }).catch(() => {});
+      }).catch((e) => console.error('customerAuth.js async op failed:', e?.message || e));
     } catch (smsErr) {
       // SMS not configured - silently continue
     }
@@ -230,7 +230,7 @@ router.post("/forgot-pin", async (req, res) => {
           customer.phone.replace(/^0/, "254"),
           `Your internet service password reset code is: ${resetCode}. It expires in 30 minutes.`,
         )
-        .catch(() => {});
+        .catch((e) => console.error('customerAuth.js async op failed:', e?.message || e));
     } catch (waErr) {
       // WhatsApp not configured - silently continue
     }

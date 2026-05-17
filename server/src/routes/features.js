@@ -462,12 +462,12 @@ router.post("/auto-suspend/run", async (req, res) => {
           customer_id: invoice.customer_id,
           subscription_id: sub.id,
           days_overdue: daysOverdue,
-        }).catch(() => {});
+        }).catch((e) => console.error("webhook trigger failed:", e?.message || e));
 
         // Slack notification
         slack
           .customerSuspended(sub.customer?.name || "Unknown", daysOverdue)
-          .catch(() => {});
+          .catch((e) => console.error("slack notification failed:", e?.message || e));
       } else if (daysOverdue >= throttle_days && !sub.throttled) {
         sub.throttled = true;
         sub.throttle_speed = `${multiStore.graceConfig.throttle_speed_up}/${multiStore.graceConfig.throttle_speed_down}`;

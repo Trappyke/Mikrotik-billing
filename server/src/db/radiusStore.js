@@ -144,6 +144,21 @@ async function handleAccounting(data) {
       session.bytes_out = bytesOut;
       session.session_time = sessionTime;
 
+      // Record interim usage to billingData
+      try {
+        const billing = getBillingData();
+        await billing.recordUsage({
+          customer_id: customer.id,
+          subscription_id: subscription?.id || null,
+          bytes_in: bytesIn,
+          bytes_out: bytesOut,
+          session_time: sessionTime,
+          session_id,
+        });
+      } catch (e) {
+        console.error("Billing interim usage record error (non-fatal):", e.message);
+      }
+
       // Check quota
       if (plan?.quota_gb) {
         const totalUsage = await getTotalCustomerUsage(customer.id);
@@ -290,6 +305,21 @@ async function handleAccounting(data) {
         bytes_out: bytesOut,
         sessions: 1,
       });
+    }
+
+    // Record to billingData for usage tracking and quota enforcement
+    try {
+      const billing = getBillingData();
+      await billing.recordUsage({
+        customer_id: customer.id,
+        subscription_id: subscription?.id || null,
+        bytes_in: bytesIn,
+        bytes_out: bytesOut,
+        session_time: sessionTime,
+        session_id,
+      });
+    } catch (e) {
+      console.error("Billing usage record error (non-fatal):", e.message);
     }
 
     return { accepted: true, reply: { "Reply-Message": "Session stopped" } };

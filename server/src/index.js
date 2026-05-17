@@ -154,23 +154,10 @@ async function initDB() {
     db = pgDb;
     dbAvailable = true;
     logger.info("Using PostgreSQL database");
-
-    // Load billing repo
     billingRepo = require("./db/billingRepository");
   } catch (err) {
-    if (isProductionEnv) {
-      logger.error("PostgreSQL is required in production startup", {
-        error: err.message,
-      });
-      throw err;
-    }
-    logger.warn("PostgreSQL not available, using in-memory storage", {
-      error: err.message,
-    });
-    db = require("./db/memory");
-    billingRepo = require("./db/billingStore");
-    dbAvailable = false;
-    return false;
+    logger.error("PostgreSQL connection failed — required for operation", { error: err.message });
+    throw err;
   }
   return true;
 }
