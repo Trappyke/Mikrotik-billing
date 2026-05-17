@@ -1728,6 +1728,7 @@ router.get("/v1/scripts/install", async (req, res) => {
       `${req.protocol}://${req.get("host")}`;
     const isHttps = baseUrl.startsWith("https");
     const fetchMode = isHttps ? "https" : "http";
+    const certCheck = isHttps ? " check-certificate=no" : "";
     const radiusServer = process.env.RADIUS_SERVER || req.get("host");
     const radiusSecret = process.env.RADIUS_SECRET || apiKey.substring(0, 16);
     const wgEndpoint = process.env.WIREGUARD_ENDPOINT || "";

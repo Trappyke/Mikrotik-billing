@@ -109,16 +109,20 @@ export default function RouterLink() {
 
   const buildCommand = () => {
     const mode = appUrl.startsWith("https") ? "https" : "http";
+    const certFlag = appUrl.startsWith("https") ? " check-certificate=no" : "";
     let extraLines = "";
 
     if (mgmtUser && mgmtPass) {
-      extraLines = `\n# Set management credentials FIRST (before running the fetch)\n:global ztpMgmtUser "${mgmtUser}"\n:global ztpMgmtPass "${mgmtPass}"\n`;
+      extraLines = `\n# Step 0 (OPTIONAL): Set management credentials FIRST\n:global ztpMgmtUser "${mgmtUser}"; :global ztpMgmtPass "${mgmtPass}"\n`;
     }
 
-    return `${extraLines}/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=${mode}
-:delay 2s
+    return `${extraLines}# Step 1: Download the install script
+/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=${mode}${certFlag}
+
+# Step 2: Run the install script
 /import file-name="install.rsc"
-:delay 1s
+
+# Step 3: Clean up
 /file remove "install.rsc"`;
   };
 
@@ -329,7 +333,7 @@ export default function RouterLink() {
               Run on Your MikroTik
             </CardTitle>
             <CardDescription>
-              Copy and paste this into your MikroTik terminal (SSH or Winbox)
+              Run these commands one at a time in your MikroTik terminal. Each line is a separate command.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -371,6 +375,9 @@ export default function RouterLink() {
             <pre className="bg-zinc-950 border border-zinc-700/50 rounded-lg p-4 text-sm text-green-400 font-mono overflow-x-auto whitespace-pre-wrap">
               {buildCommand()}
             </pre>
+            <p className="text-xs text-zinc-500">
+              Run Step 0 first if you set credentials above. Then run Steps 1-3 in order.
+            </p>
             <Button onClick={copyCommand} className="gap-2 w-full">
               {copied ? (
                 <Check className="w-4 h-4" />
