@@ -55,6 +55,8 @@ export default function RouterLink() {
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [polling, setPolling] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [lastError, setLastError] = useState(null);
+  const [checkCount, setCheckCount] = useState(0);
 
   useEffect(() => {
     fetchTenant();
@@ -169,8 +171,26 @@ export default function RouterLink() {
         headers: { Authorization: "Bearer " + apiKey },
       });
       setConnectionStatus(data);
+      setLastError(null);
+      setCheckCount((c) => c + 1);
+      return data;
     } catch (e) {
-      console.error("[RouterLink] Status check failed:", e.message);
+      const msg = e.response?.data?.error || e.message;
+      console.error("[RouterLink] Status check failed:", msg, e.response?.status);
+      setLastError(`${msg} (HTTP ${e.response?.status || "network error"})`);
+      return null;
+    }
+  };
+
+  const manualCheck = async () => {
+    setLastError(null);
+    const result = await checkConnection();
+    if (result?.connected) {
+      toast.success("Router found!");
+    } else if (result) {
+      toast.info("Still waiting for router...");
+    } else {
+      toast.error("Check failed - see details below");
     }
   };
 
@@ -515,11 +535,29 @@ export default function RouterLink() {
 
             {/* Waiting state */}
             {polling && !connectionStatus?.connected && (
-              <div className="flex items-center gap-3 text-amber-400">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm">
-                  Listening for router connection... Run the command on your MikroTik now.
-                </span>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 text-amber-400">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">
+                    Listening for router connection... ({checkCount} checks)
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={manualCheck}
+                  className="gap-2 w-full border-zinc-700/50 text-zinc-300"
+                >
+                  Check Now
+                </Button>
+                {lastError && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                    <p className="text-xs text-red-400">{lastError}</p>
+                  </div>
+                )}
+                {connectionStatus?.hint && (
+                  <p className="text-xs text-zinc-500">{connectionStatus.hint}</p>
+                )}
               </div>
             )}
 

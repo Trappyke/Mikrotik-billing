@@ -1969,19 +1969,36 @@ router.get("/v1/status", async (req, res) => {
       return res.status(401).json({ error: "Missing token" });
     }
     const apiKey = authHeader.split(" ")[1];
+    const tokenPrefix = apiKey.substring(0, 16);
     const db = getDb();
+
+    // Verify this API key belongs to a tenant
+    let tenant = null;
+    try {
+      const tenantResult = await db.query(
+        "SELECT id, name FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
+        [apiKey],
+      );
+      tenant = tenantResult.rows[0];
+    } catch (e) {
+      tenant = null;
+    }
+
+    if (!tenant) {
+      return res.status(403).json({ connected: false, error: "Invalid API key. Generate a new one from the Router Link page." });
+    }
 
     // Get the latest provision log
     const logResult = await db.query(
       "SELECT action, status, ip_address, router_id, created_at, details FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
-      [apiKey.substring(0, 16)],
+      [tokenPrefix],
     );
 
     if (logResult.rows.length === 0) {
-      // Check if there's any router with this provision status
+      // Fallback: check routers table for any router linked to this token
       const routerResult = await db.query(
-        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE provision_token IN (SELECT token FROM provision_logs WHERE token = $1) OR mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) LIMIT 1",
-        [apiKey.substring(0, 16)],
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) OR provision_token = $1 LIMIT 1",
+        [tokenPrefix],
       );
 
       if (routerResult.rows.length > 0) {
@@ -1989,7 +2006,7 @@ router.get("/v1/status", async (req, res) => {
         return res.json({
           connected: true,
           status: r.provision_status || "online",
-          message: "Router found",
+          message: "Router found (fallback check)",
           router: {
             id: r.id,
             name: r.name,
@@ -2004,7 +2021,8 @@ router.get("/v1/status", async (req, res) => {
       return res.json({
         connected: false,
         status: "waiting",
-        message: "Awaiting router connection...",
+        message: "Awaiting router connection... Run the command on your MikroTik.",
+        hint: "Make sure the MikroTik can reach this server. The script reports back after running.",
       });
     }
 

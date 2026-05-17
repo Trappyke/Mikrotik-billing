@@ -83,7 +83,7 @@ const messagingLimiter = rateLimit({
 
 const mikrotikLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 60, // 60 requests per window per IP
+  max: 200, // 200 requests per window per IP (enough for polling + router traffic)
   message: { error: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
