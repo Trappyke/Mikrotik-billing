@@ -2274,7 +2274,7 @@ router.get("/v1/report", async (req, res) => {
   }
 });
 
-// GET /v1/status
+// GET /v1/status (legacy key-based - just check provision_logs, no tenant validation)
 router.get("/v1/status", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -2285,51 +2285,7 @@ router.get("/v1/status", async (req, res) => {
     const tokenPrefix = apiKey.substring(0, 16);
     const db = getDb();
 
-    // Find tenant by this API key
-    let tenant = null;
-    try {
-      const tenantResult = await db.query(
-        "SELECT id, name FROM tenants WHERE settings->>'api_key' = $1 AND is_active = true LIMIT 1",
-        [apiKey],
-      );
-      tenant = tenantResult.rows[0];
-    } catch (e) {}
-
-    if (!tenant) {
-      return res.json({
-        connected: false,
-        status: "invalid_key",
-        message: "API key mismatch. The key on this page doesn't match what's stored on the server.",
-        hint: "Click 'Generate API Key' to create a new one, then re-run the command on your MikroTik.",
-      });
-    }
-
-    // PRIMARY: Find routers by tenant_id (most reliable)
-    const routerResult = await db.query(
-      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status, updated_at FROM routers WHERE tenant_id = $1 AND provision_status = 'online' ORDER BY updated_at DESC LIMIT 1",
-      [tenant.id],
-    );
-
-    if (routerResult.rows.length > 0) {
-      const r = routerResult.rows[0];
-      return res.json({
-        connected: true,
-        status: "online",
-        message: "Router connected",
-        lastSeen: r.updated_at,
-        ip: r.ip_address,
-        router: {
-          id: r.id,
-          name: r.name,
-          model: r.model,
-          mac: r.mac_address,
-          ip: r.ip_address,
-          has_connection: !!r.linked_mikrotik_connection_id,
-        },
-      });
-    }
-
-    // FALLBACK: Check provision_logs by token prefix
+    // Check provision_logs first
     const logResult = await db.query(
       "SELECT action, status, ip_address, router_id, created_at, details FROM provision_logs WHERE token = $1 ORDER BY created_at DESC LIMIT 1",
       [tokenPrefix],
@@ -2337,55 +2293,52 @@ router.get("/v1/status", async (req, res) => {
 
     if (logResult.rows.length > 0) {
       const log = logResult.rows[0];
-      let details = {};
-      try { details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {}); } catch(e) {}
-
       let router = null;
       if (log.router_id) {
-        const rResult = await db.query(
-          "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
-          [log.router_id],
-        );
-        if (rResult.rows.length > 0) {
-          const r = rResult.rows[0];
-          router = { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id };
-        }
+        try {
+          const rResult = await db.query(
+            "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE id = $1",
+            [log.router_id],
+          );
+          if (rResult.rows.length > 0) {
+            const r = rResult.rows[0];
+            router = { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id };
+          }
+        } catch (e) {}
       }
 
       return res.json({
         connected: true,
         status: "online",
-        message: "Router connected (log fallback)",
+        message: "Router found via logs",
         lastSeen: log.created_at,
         ip: log.ip_address,
         lastAction: log.action,
         router,
-        has_credentials: details.has_credentials || false,
-        connection_id: details.connection_id || null,
       });
     }
 
-    // FALLBACK: Check routers by MAC in provision_logs
-    const macResult = await db.query(
-      "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) LIMIT 1",
-      [tokenPrefix],
-    );
-
-    if (macResult.rows.length > 0) {
-      const r = macResult.rows[0];
-      return res.json({
-        connected: true,
-        status: "online",
-        message: "Router found (MAC fallback)",
-        router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
-      });
-    }
+    // Fallback: check if there's any router with this token's MAC in logs
+    try {
+      const macResult = await db.query(
+        "SELECT id, name, model, mac_address, ip_address, linked_mikrotik_connection_id, provision_status FROM routers WHERE mac_address IN (SELECT details->>'mac' FROM provision_logs WHERE token = $1) LIMIT 1",
+        [tokenPrefix],
+      );
+      if (macResult.rows.length > 0) {
+        const r = macResult.rows[0];
+        return res.json({
+          connected: true,
+          status: "online",
+          message: "Router found via MAC",
+          router: { id: r.id, name: r.name, model: r.model, mac: r.mac_address, ip: r.ip_address, has_connection: !!r.linked_mikrotik_connection_id },
+        });
+      }
+    } catch (e) {}
 
     return res.json({
       connected: false,
       status: "waiting",
       message: "Awaiting router connection... Run the command on your MikroTik.",
-      hint: "Make sure the MikroTik can reach this server. The script reports back after running.",
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

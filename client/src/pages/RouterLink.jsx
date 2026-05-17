@@ -466,11 +466,9 @@ export default function RouterLink() {
                     ? "bg-green-500 shadow-lg shadow-green-500/30"
                     : connectionStatus?.connected
                       ? "bg-green-500 animate-pulse"
-                      : connectionStatus?.status === "invalid_key"
-                        ? "bg-red-500"
-                        : polling
-                          ? "bg-amber-500 animate-pulse"
-                          : "bg-zinc-600"
+                      : polling
+                        ? "bg-amber-500 animate-pulse"
+                        : "bg-zinc-600"
                 }`}
               />
               <span className="text-sm text-zinc-300">
@@ -478,11 +476,9 @@ export default function RouterLink() {
                   ? "Fully Linked & Managed"
                   : connectionStatus?.connected
                     ? "Router Connected"
-                    : connectionStatus?.status === "invalid_key"
-                      ? "Key Mismatch"
-                      : polling
-                        ? "Listening..."
-                        : "Not Monitoring"}
+                    : polling
+                      ? "Listening..."
+                      : "Not Monitoring"}
               </span>
             </div>
 
@@ -575,68 +571,8 @@ export default function RouterLink() {
               </Card>
             )}
 
-            {/* Key mismatch state */}
-            {connectionStatus?.status === "invalid_key" && (
-              <Card className="bg-red-500/5 border-red-500/30">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-sm text-red-300 font-medium">API Key Mismatch</p>
-                      <p className="text-xs text-red-400/70 mt-1">
-                        The key on this page doesn't match what the MikroTik is using. Paste the key from your command below.
-                      </p>
-                    </div>
-                  </div>
-                  <input
-                    type="text"
-                    value={manualKey}
-                    onChange={(e) => setManualKey(e.target.value)}
-                    placeholder="Paste the API key from your MikroTik command here..."
-                    className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-amber-400 font-mono focus:outline-none focus:ring-2 focus:ring-red-500/50"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => checkConnection(manualKey)}
-                      disabled={!manualKey}
-                      className="gap-2 flex-1"
-                    >
-                      Try This Key
-                    </Button>
-                    <Button
-                      onClick={generateKey}
-                      disabled={generating}
-                      variant="outline"
-                      className="gap-2 border-zinc-700/50 text-zinc-300"
-                    >
-                      {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-                      New Key
-                    </Button>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    After trying the correct key, click "Save as API Key" to store it.
-                  </p>
-                  {connectionStatus?.connected && (
-                    <Button
-                      onClick={async () => {
-                        setApiKey(manualKey);
-                        localStorage.setItem("router_link_api_key", manualKey);
-                        try {
-                          await axios.put(`${API}/tenants/${tenantId}/api-key`, { api_key: manualKey }, { headers: { Authorization: `Bearer ${getToken()}` } });
-                          toast.success("Key saved!");
-                        } catch(e) { toast.error("Saved locally only"); }
-                      }}
-                      className="gap-2 w-full bg-green-500 hover:bg-green-600 text-black"
-                    >
-                      <Check className="w-4 h-4" /> Save as API Key
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
             {/* Waiting state */}
-            {polling && !connectionStatus?.connected && connectionStatus?.status !== "invalid_key" && (
+            {polling && !connectionStatus?.connected && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-amber-400">
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -656,6 +592,20 @@ export default function RouterLink() {
                     <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
                     <p className="text-xs text-red-400">{lastError}</p>
                   </div>
+                )}
+                {checkCount > 5 && (
+                  <Card className="bg-amber-500/5 border-amber-500/30">
+                    <CardContent className="p-3 space-y-2">
+                      <p className="text-xs text-amber-300 font-medium">Still waiting?</p>
+                      <p className="text-xs text-zinc-400">
+                        The key on this page might not match the one you pasted on the MikroTik. Generate a new key and re-run the command.
+                      </p>
+                      <Button onClick={generateKey} disabled={generating} className="gap-2 w-full">
+                        {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                        Generate New Key & Re-run Command
+                      </Button>
+                    </CardContent>
+                  </Card>
                 )}
                 {connectionStatus?.hint && (
                   <p className="text-xs text-zinc-500">{connectionStatus.hint}</p>
