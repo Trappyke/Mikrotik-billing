@@ -1724,7 +1724,10 @@ router.get("/v1/scripts/install", async (req, res) => {
         .send("# ERROR: Invalid API key");
     }
 
-    const baseUrl = process.env.APP_URL || `https://${req.get("host")}`;
+    const baseUrl = process.env.APP_URL ||
+      `${req.protocol}://${req.get("host")}`;
+    const isHttps = baseUrl.startsWith("https");
+    const fetchMode = isHttps ? "https" : "http";
     const radiusServer = process.env.RADIUS_SERVER || req.get("host");
     const radiusSecret = process.env.RADIUS_SECRET || apiKey.substring(0, 16);
     const wgEndpoint = process.env.WIREGUARD_ENDPOINT || "";
@@ -1785,11 +1788,11 @@ router.get("/v1/scripts/install", async (req, res) => {
       ":local mac [/interface ethernet get [find default-name=ether1] mac-address]",
       `:local url "${baseUrl}/api/router/v1/report?model=\$model&serial=\$serial&version=\$version&mac=\$mac"`,
       `:if ([:len \$wgPubKey] > 0) do={ :set url (\$url . "&wg_pubkey=" . \$wgPubKey) }`,
-      `:do { /tool fetch url=\$url http-header-field="Authorization: Bearer ${apiKey}" mode=https output=none } on-error={ :log warning "[Billing] Report failed" }`,
+      `:do { /tool fetch url=\$url http-header-field="Authorization: Bearer ${apiKey}" mode=${fetchMode} output=none } on-error={ :log warning "[Billing] Report failed" }`,
       "",
       "# Schedule auto-sync",
       "/system scheduler remove [find name=billing-sync]",
-      `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=https output=none" comment="Billing Sync" disabled=no`,
+      `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/scripts/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=${fetchMode} output=none" comment="Billing Sync" disabled=no`,
       "",
       `:put "[Billing] Done!"`,
       `:put "[Billing] Router linked to ${baseUrl}"`,

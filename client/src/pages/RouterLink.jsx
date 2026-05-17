@@ -29,7 +29,15 @@ export default function RouterLink() {
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tenantId, setTenantId] = useState("");
-  const [appUrl, setAppUrl] = useState(window.location.origin);
+  const [appUrl, setAppUrl] = useState(
+    () => localStorage.getItem("router_link_app_url") || window.location.origin
+  );
+
+  const handleAppUrlChange = (e) => {
+    const val = e.target.value;
+    setAppUrl(val);
+    localStorage.setItem("router_link_app_url", val);
+  };
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [polling, setPolling] = useState(false);
 
@@ -87,7 +95,12 @@ export default function RouterLink() {
   };
 
   const copyCommand = () => {
-    const cmd = `/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=https\r\n:delay 2s\r\n/import file-name="install.rsc"\r\n:delay 1s\r\n/file remove "install.rsc"`;
+    const mode = appUrl.startsWith("https") ? "https" : "http";
+    const cmd = `/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=${mode}
+:delay 2s
+/import file-name="install.rsc"
+:delay 1s
+/file remove "install.rsc"`;
     navigator.clipboard.writeText(cmd);
     setCopied(true);
     toast.success("Command copied to clipboard");
@@ -260,8 +273,23 @@ export default function RouterLink() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1.5 font-medium">
+                Server URL
+              </label>
+              <input
+                type="text"
+                value={appUrl}
+                onChange={handleAppUrlChange}
+                placeholder="https://your-server.com"
+                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors"
+              />
+              <p className="text-xs text-zinc-500 mt-1">
+                Your production server URL. The MikroTik router must be able to reach this address.
+              </p>
+            </div>
             <pre className="bg-zinc-950 border border-zinc-700/50 rounded-lg p-4 text-sm text-green-400 font-mono overflow-x-auto whitespace-pre-wrap">
-              {`/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=https
+              {`/tool fetch url="${appUrl}/api/router/v1/scripts/install" http-header-field="Authorization: Bearer ${apiKey}" dst-path="install.rsc" mode=${appUrl.startsWith("https") ? "https" : "http"}
 :delay 2s
 /import file-name="install.rsc"
 :delay 1s
