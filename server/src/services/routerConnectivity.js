@@ -36,12 +36,9 @@ class RouterConnectivityService {
       const parts = encrypted.split(":");
       if (parts.length !== 3) return encrypted;
       const crypto = require("crypto");
-      const key = crypto
-        .createHash("sha256")
-        .update(
-          process.env.ENCRYPTION_KEY || "default-key-change-in-production-32",
-        )
-        .digest();
+      const key = Buffer.from(
+        (process.env.ENCRYPTION_KEY || "default-key-change-in-production-32").slice(0, 32)
+      );
       const iv = Buffer.from(parts[0], "hex");
       const tag = Buffer.from(parts[1], "hex");
       const data = Buffer.from(parts[2], "hex");
