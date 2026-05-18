@@ -223,7 +223,6 @@ router.put("/:id", async (req, res) => {
         is_active,
         max_customers,
         max_routers,
-        req.body.settings || null,
         req.params.id,
       ],
     );

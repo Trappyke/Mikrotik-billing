@@ -22,8 +22,9 @@ export function setAuth(token, user) {
   try {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
-    
-    // Verify immediately
+
+    localStorage.setItem('auth_change_ts', Date.now());
+
     const saved = localStorage.getItem(TOKEN_KEY);
     console.log('  ✅ Token saved:', saved ? `YES (${saved.substring(0, 20)}...)` : 'NO!');
     

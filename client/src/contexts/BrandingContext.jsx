@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 
 const API = import.meta.env.VITE_API_URL || "/api";
@@ -15,12 +15,12 @@ const BrandingContext = createContext(defaults);
 
 export function BrandingProvider({ children }) {
   const [branding, setBranding] = useState(defaults);
+  const lastFetchTs = useRef(0);
 
-  useEffect(() => {
+  const fetchBranding = useCallback(() => {
     const token = localStorage.getItem("auth_token");
     if (!token) return;
 
-    // Read branding from tenant settings (single source of truth)
     axios
       .get(`${API}/tenants/current`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -41,6 +41,20 @@ export function BrandingProvider({ children }) {
         );
       });
   }, []);
+
+  useEffect(() => {
+    fetchBranding();
+
+    const interval = setInterval(() => {
+      const ts = parseInt(localStorage.getItem("auth_change_ts") || "0");
+      if (ts > lastFetchTs.current) {
+        lastFetchTs.current = ts;
+        fetchBranding();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [fetchBranding]);
 
   const appName =
     branding.branding_title || branding.company_name || "MikroTik Billing";
