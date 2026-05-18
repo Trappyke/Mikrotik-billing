@@ -115,19 +115,17 @@ export function MonitoringDashboard() {
       };
 
       wsRef.current.onclose = () => {
-        setConnectionStatus("disconnected");
-        console.log("WebSocket disconnected");
-        // Attempt to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
+        setConnectionStatus("closed");
+        console.log("WebSocket disconnected, falling back to REST polling");
+        setAutoRefresh(true);
       };
 
-      wsRef.current.onerror = (error) => {
-        setConnectionStatus("error");
-        setMonitoringStatus("error");
-        setMonitoringMessage(
-          "Unable to connect to the real MikroTik monitoring backend",
-        );
-        console.error("WebSocket error:", error);
+      wsRef.current.onerror = () => {
+        setConnectionStatus("closed");
+        setMonitoringStatus("polling");
+        setMonitoringMessage("Real-time WebSocket unavailable — using REST polling");
+        console.warn("WebSocket connection failed, will use REST API fallback");
+        setAutoRefresh(true);
       };
     } catch (error) {
       console.error("Failed to connect WebSocket:", error);
@@ -151,10 +149,11 @@ export function MonitoringDashboard() {
 
   useEffect(() => {
     if (autoRefresh) {
-      intervalRef.current = setInterval(fetchData, 60000); // Refresh every minute
+      const intervalMs = connectionStatus === "connected" ? 60000 : 10000;
+      intervalRef.current = setInterval(fetchData, intervalMs);
     }
     return () => clearInterval(intervalRef.current);
-  }, [autoRefresh]);
+  }, [autoRefresh, connectionStatus]);
 
   const fetchData = async () => {
     try {
@@ -199,8 +198,8 @@ export function MonitoringDashboard() {
         return "text-green-400";
       case "connecting":
         return "text-yellow-400";
-      case "error":
-        return "text-red-400";
+      case "closed":
+        return "text-amber-400";
       default:
         return "text-gray-400";
     }
@@ -233,7 +232,7 @@ export function MonitoringDashboard() {
             <Activity className="w-6 h-6 text-green-400" />
             Real-time Network Monitoring
             <div
-              className={`w-2 h-2 rounded-full ${connectionStatus === "connected" ? "bg-green-400 animate-pulse" : connectionStatus === "error" ? "bg-red-400" : "bg-gray-400"}`}
+              className={`w-2 h-2 rounded-full ${connectionStatus === "connected" ? "bg-green-400 animate-pulse" : connectionStatus === "connecting" ? "bg-yellow-400" : "bg-amber-400"}`}
             />
           </h2>
           <p className="text-sm text-slate-400">
