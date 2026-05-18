@@ -22,6 +22,38 @@ function getClientIp(req) {
   return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
 }
 
+async function repairCredentials(tenantId, slug) {
+  const db = getDb();
+  try {
+    const routers = await db.query(
+      `SELECT r.id as router_id, r.name, r.linked_mikrotik_connection_id, r.mgmt_username, r.mgmt_password_encrypted, r.mgmt_port,
+              mc.id as connection_id, mc.password_encrypted, mc.username as conn_username
+       FROM routers r
+       INNER JOIN mikrotik_connections mc ON mc.id = r.linked_mikrotik_connection_id
+       WHERE r.tenant_id = $1 AND r.provision_status = 'online'
+         AND r.mgmt_password_encrypted IS NOT NULL AND r.mgmt_password_encrypted != ''
+         AND (mc.password_encrypted IS NULL OR mc.password_encrypted = '')`,
+      [tenantId],
+    );
+    let repaired = 0;
+    for (const r of routers.rows || []) {
+      try {
+        await db.query(
+          "UPDATE mikrotik_connections SET username = COALESCE(NULLIF($1,''), username), password_encrypted = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+          [r.mgmt_username || r.conn_username || 'admin', r.mgmt_password_encrypted, r.connection_id],
+        );
+        repaired++;
+        logger.info(`[SelfHeal] Repaired credentials for router ${r.name} (${r.router_id})`);
+      } catch (e) {
+        logger.warn(`[SelfHeal] Failed to repair router ${r.router_id}: ${e.message}`);
+      }
+    }
+    return repaired;
+  } catch (e) {
+    return 0;
+  }
+}
+
 function getServerBaseUrl(req, explicitBaseUrl) {
   return (
     explicitBaseUrl ||
@@ -1944,221 +1976,72 @@ router.get("/v1/:slug/install", async (req, res) => {
     const radiusSecret = process.env.RADIUS_SECRET || (apiKey || slug).substring(0, 16);
     const routerIdentity = req.query.identity || tenant.name || slug;
 
-    const script = [
-      "#############################################",
-      "# MikroTik ISP Billing - Full Provisioning",
-      `# Tenant: ${tenant.name || slug}`,
-      `# Server: ${baseUrl}`,
-      "#############################################",
-      "",
-      ':put "==================== ISP Billing Setup ===================="',
-      "",
-      "# ── Management credentials ──",
-      ":global ztpMgmtUser; :global ztpMgmtPass;",
-      ':local hasCreds [:len $ztpMgmtUser]',
-      ':if ($hasCreds > 0) do={ :put "[Setup] Management credentials: found" } else={ :put "[Setup] No credentials set" }',
-      "",
-      "# ── URL encoder for safe credential passing ──",
-      ":global ztpUrlEncode do={",
-      "  :local str $1; :local result \"\"; :local i 0; :local ch \"\"; :local len [:len $str]",
-      "  :while ($i < $len) do={",
-      "    :set ch [:pick $str $i]",
-      '    :if ($ch = " ") do={ :set result ($result . "%20") } else={',
-      '      :if ($ch = "&") do={ :set result ($result . "%26") } else={',
-      '        :if ($ch = "=") do={ :set result ($result . "%3D") } else={',
-      '          :if ($ch = "/") do={ :set result ($result . "%2F") } else={',
-      '            :if ($ch = "?") do={ :set result ($result . "%3F") } else={',
-      '              :if ($ch = "#") do={ :set result ($result . "%23") } else={',
-      '                :if ($ch = "+") do={ :set result ($result . "%2B") } else={',
-      '                  :if ($ch = "@") do={ :set result ($result . "%40") } else={',
-      '                    :if ($ch = ":") do={ :set result ($result . "%3A") } else={',
-      '                      :if ($ch = "*") do={ :set result ($result . "%2A") } else={',
-      '                        :if ($ch = "%") do={ :set result ($result . "%25") } else={',
-      "                          :set result ($result . $ch)",
-      "                        }",
-      "                      }",
-      "                    }",
-      "                  }",
-      "                }",
-      "              }",
-      "            }",
-      "          }",
-      "        }",
-      "      }",
-      "    }",
-      "    :set i ($i + 1)",
-      "  }",
-      "  :return $result",
-      "}",
-      "",
-      "# ── System Identity ──",
-      `:local sysName [/system identity get name]`,
-      `:if ($sysName != "${routerIdentity}") do={ /system identity set name="${routerIdentity}" }`,
-      `:put "[Setup] Identity: ${routerIdentity}"`,
-      "",
-      "# ── WAN Interface Detection ──",
-      ':put "[Setup] Detecting WAN interface..."',
-      ":local wanPort \"\"",
-      ":local foundWan false",
-      "",
-      "  # Method 1: Default route gateway-interface",
-      "  :local defRoutes [/ip route find where dst-address=0.0.0.0/0]",
-      "  :if ([:len $defRoutes] > 0) do={",
-      '    :local gwIface ""',
-      '    :do { :set gwIface [/ip route get ([:pick $defRoutes 0]) gateway-interface] } on-error={}',
-      '    :put ("[Setup] Default route gateway-interface: " . $gwIface)',
-      "    :if ([:len $gwIface] > 0) do={",
-      "      :set wanPort $gwIface",
-      "      :set foundWan true",
-      '      :put ("[Setup] WAN detected from default route: " . $wanPort)',
-      "    }",
-      "  }",
-      "",
-      "  # Method 2: DHCP client interface",
-      "  :if (!$foundWan) do={",
-      "    :local dhcpClients [/ip dhcp-client find]",
-      "    :if ([:len $dhcpClients] > 0) do={",
-      "      :local dhcpIface [/ip dhcp-client get ([:pick $dhcpClients 0]) interface]",
-      "      :if ([:len $dhcpIface] > 0) do={",
-      "        :set wanPort $dhcpIface",
-      "        :set foundWan true",
-      '        :put ("[Setup] WAN from DHCP client: " . $wanPort)',
-      "      }",
-      "    }",
-      "  }",
-      "",
-      '  # Method 3: Test DNS resolution through each running ethernet',
-      "  :if (!$foundWan) do={",
-      '    :put "[Setup] Testing internet on each running interface..."',
-      "    :foreach iface in=[/interface ethernet find where running=yes] do={",
-      "      :if (!$foundWan) do={",
-      "        :local testIface [/interface ethernet get $iface name]",
-      '        :do {',
-      "          :if ([:resolve mikrotik.com] != \"\") do={",
-      '            :set wanPort $testIface',
-      '            :set foundWan true',
-      '            :put ("[Setup] WAN via connectivity: " . $wanPort)',
-      '          }',
-      '        } on-error={}',
-      "      }",
-      "    }",
-      "  }",
-      "",
-      '  # Method 4: First running ethernet as fallback',
-      "  :if (!$foundWan) do={",
-      "    :foreach iface in=[/interface ethernet find where running=yes] do={",
-      "      :if (!$foundWan) do={",
-      "        :set wanPort [/interface ethernet get $iface name]",
-      "        :set foundWan true",
-      '        :put ("[Setup] WAN fallback (first UP): " . $wanPort)',
-      "      }",
-      "    }",
-      "  }",
-      "",
-      "  :if (!$foundWan) do={",
-      '    :set wanPort "ether1"',
-      '    :put "[Setup] WARNING: No WAN detected, using ether1"',
-      "  }",
-      ':put ("[Setup] WAN interface: " . $wanPort)',
-      "",
-      "# ── Timezone ──",
-      ':do { /system clock set time-zone-name=Africa/Nairobi } on-error={}',
-      ':put "[Setup] Timezone configured"',
-      "",
-      "# ── DNS ──",
-      ':do { /ip dns set servers=8.8.8.8,8.8.4.4 allow-remote-requests=yes cache-size=10000KiB } on-error={}',
-      ':put "[Setup] DNS configured"',
-      "",
-      "# ── NTP ──",
-      ':do { /system ntp client set enabled=yes mode=unicast servers=pool.ntp.org } on-error={}',
-      ':put "[Setup] NTP configured"',
-      "",
-      "# ── RADIUS ──",
-      `:do { /radius add address=${radiusServer} secret="${radiusSecret}" service=ppp,hotspot timeout=300ms comment="ISP RADIUS" disabled=no } on-error={}`,
-      ':put "[Setup] RADIUS configured"',
-      "",
-      "# ── PPPoE Server ──",
-      ':do { :if ([:len [/interface pppoe-server server find]] = 0) do={ /interface pppoe-server server add service-name=pppoe-internet interface=bridge1 authentication=pap,chap,mschap1,mschap2 one-session-per-host=yes disabled=no } } on-error={}',
-      ':put "[Setup] PPPoE server ready"',
-      "",
-      "# ── Hotspot Server ──",
-      ':do { :if ([:len [/ip hotspot find]] = 0) do={ /ip hotspot add interface=bridge1 disabled=no } } on-error={}',
-      ':put "[Setup] Hotspot server ready"',
-      "",
-      "# ── Firewall ──",
-      ':do {',
-      '  /ip firewall filter remove [find comment="ISP Established"]',
-      '  /ip firewall filter remove [find comment="ISP Invalid"]',
-      '  /ip firewall filter remove [find comment="ISP ICMP"]',
-      '  /ip firewall filter remove [find comment="ISP NTP"]',
-      '  /ip firewall filter remove [find comment="ISP SSH"]',
-      '  /ip firewall filter remove [find comment="ISP WinBox"]',
-      '  /ip firewall filter remove [find comment="ISP API"]',
-      '  /ip firewall filter remove [find comment="ISP HTTPS"]',
-      '  /ip firewall filter remove [find comment="ISP Input Drop"]',
-      '  /ip firewall filter remove [find comment="ISP Forward Established"]',
-      '  /ip firewall filter remove [find comment="ISP Forward Invalid"]',
-      '  /ip firewall filter remove [find comment="ISP Forward Drop"]',
-      '  /ip firewall filter remove [find comment="ISP FastTrack"]',
-      '  /ip firewall filter remove [find comment="ISP LAN to WAN"]',
-      '',
-      '  /ip firewall filter add chain=input action=accept connection-state=established,related,untracked comment="ISP Established" place-before=0',
-      '  /ip firewall filter add chain=input action=drop connection-state=invalid comment="ISP Invalid"',
-      '  /ip firewall filter add chain=input protocol=icmp action=accept comment="ISP ICMP"',
-      '  /ip firewall filter add chain=input protocol=udp port=123 action=accept comment="ISP NTP"',
-      '  /ip firewall filter add chain=input protocol=tcp dst-port=22 action=accept comment="ISP SSH"',
-      '  /ip firewall filter add chain=input protocol=tcp dst-port=8291 action=accept comment="ISP WinBox"',
-      '  /ip firewall filter add chain=input protocol=tcp dst-port=8728 action=accept comment="ISP API"',
-      '  /ip firewall filter add chain=input protocol=tcp dst-port=443 action=accept comment="ISP HTTPS"',
-      '  /ip firewall filter add chain=input action=drop comment="ISP Input Drop"',
-      '',
-      '  /ip firewall filter add chain=forward action=accept connection-state=established,related,untracked comment="ISP Forward Established" place-before=0',
-      '  /ip firewall filter add chain=forward action=drop connection-state=invalid comment="ISP Forward Invalid"',
-      '  /ip firewall filter add chain=forward action=fasttrack-connection connection-state=established,related comment="ISP FastTrack"',
-      '  /ip firewall filter add chain=forward action=accept in-interface=bridge1 comment="ISP LAN to WAN"',
-      '  /ip firewall filter add chain=forward action=drop comment="ISP Forward Drop"',
-      '} on-error={}',
-      ':put "[Setup] Firewall configured"',
-      "",
-      "# ── NAT Masquerade ──",
-      ':do { /ip firewall nat remove [find comment="ISP Masquerade"]; /ip firewall nat add chain=srcnat action=masquerade out-interface=$wanPort comment="ISP Masquerade" } on-error={}',
-      ':put "[Setup] NAT masquerade added"',
-      "",
-      "# ── Connection Tracking ──",
-      ':do { /ip firewall connection tracking set tcp-close-wait-time=10s tcp-time-wait-time=10s } on-error={}',
-      ':put "[Setup] Connection tracking tuned"',
-      "",
-      "# ── Secure Services ──",
-      ':do { /ip service set telnet disabled=yes; /ip service set ftp disabled=yes; /ip service set www disabled=yes } on-error={}',
-      ':do { /ip ssh set strong-crypto=yes } on-error={}',
-      ':put "[Setup] Insecure services disabled, SSH hardened"',
-      "",
-      "# ── Report back ──",
-      ':put "[Setup] Reporting to server..."',
-      ":local model; :do { :set model [/system routerboard get model] } on-error={}",
-      ":local serial; :do { :set serial [/system routerboard get serial-number] } on-error={}",
-      ":local version; :do { :set version [/system package get [find name=routeros] version] } on-error={}",
-      ":local mac; :do { :set mac [/interface ethernet get [find default-name=$wanPort] mac-address] } on-error={:do { :set mac [/interface ethernet get ([find]->0) mac-address] } on-error={} }",
-      ":local reportUrl \"" + baseUrl + "/api/router/v1/" + slug + "/report?model=$model&serial=$serial&version=$version&mac=$mac\"",
-      ":local mgmtUser $ztpMgmtUser; :local mgmtPass $ztpMgmtPass",
-      ":if ([:len $mgmtUser] > 0) do={ :do { :set reportUrl ($reportUrl . \"&mgmt_user=\" . [$ztpUrlEncode $mgmtUser]) } on-error={} }",
-      ":if ([:len $mgmtPass] > 0) do={ :do { :set reportUrl ($reportUrl . \"&mgmt_pass=\" . [$ztpUrlEncode $mgmtPass]) } on-error={} }",
-      `:do { /tool fetch url=$reportUrl http-header-field="Authorization: Bearer ${apiKey}" mode=${fetchMode} ${certFlag} output=none } on-error={}`,
-      ':put "[Setup] Report sent"',
-      "",
-      "# ── Schedule auto-sync ──",
-      "/system scheduler remove [find name=billing-sync]",
-      `/system scheduler add name=billing-sync interval=5m on-event="/tool fetch url=\\"${baseUrl}/api/router/v1/${slug}/sync\\" http-header-field=\\"Authorization: Bearer ${apiKey}\\" mode=${fetchMode} ${certFlag} output=none" comment="ISP Billing Sync" disabled=no`,
-      ':put "[Setup] Sync scheduled every 5 minutes"',
-      "",
-      ':put "==================== SETUP COMPLETED ===================="',
-      `:put "[Setup] Router linked to ${baseUrl}"`,
-    ].join("\n");
+    const scriptTemplates = require("../services/scriptTemplates");
+    const script = scriptTemplates.buildInstallScript({
+      baseUrl,
+      apiKey,
+      slug,
+      radiusServer,
+      radiusSecret,
+      routerIdentity,
+      fetchMode,
+      certFlag,
+    });
 
     res.type("text/plain").send(script);
   } catch (error) {
     res.status(500).type("text/plain").send("# ERROR: Internal server error");
   }
+});
+
+// GET /v1/:slug/health — lightweight diagnostic for routers to self-check
+router.get("/v1/:slug/health", async (req, res) => {
+  const { slug } = req.params;
+  const tenant = await findTenantBySlugOrKey(slug, null);
+  const db = getDb();
+
+  let report = ":put \"=== Router Health Check ===\"";
+
+  if (!tenant) {
+    return res.type("text/plain").send(report + "\n:put \"FAIL: Tenant not found\"");
+  }
+
+  try {
+    const routers = await db.query(
+      "SELECT id, name, provision_status, linked_mikrotik_connection_id FROM routers WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 1",
+      [tenant.id],
+    );
+
+    if (routers.rows.length === 0) {
+      return res.type("text/plain").send(report + "\n:put \"STATUS: No router registered yet\"");
+    }
+
+    const r = routers.rows[0];
+    report += `\n:put "  Router: ${(r.name || 'Unknown').replace(/"/g, '')}"`;
+    report += `\n:put "  Provision: ${r.provision_status || 'unknown'}"`;
+
+    let hasCreds = false;
+    if (r.linked_mikrotik_connection_id) {
+      const conn = await db.query(
+        "SELECT username, password_encrypted, is_online FROM mikrotik_connections WHERE id = $1",
+        [r.linked_mikrotik_connection_id],
+      );
+      if (conn.rows.length > 0) {
+        const c = conn.rows[0];
+        report += `\n:put "  API User: ${c.username || '(none)'}"`;
+        report += `\n:put "  API Password: ${c.password_encrypted ? 'SET' : 'MISSING'}"`;
+        report += `\n:put "  API Online: ${c.is_online ? 'YES' : 'NO'}"`;
+        hasCreds = !!(c.username && c.password_encrypted);
+      }
+    }
+
+    report += `\n:put "  Status: ${hasCreds ? 'FULLY MANAGED' : 'NEEDS CREDENTIALS'}"`;
+    report += "\n:put \"=== End Health Check ===\"";
+  } catch (e) {
+    report += `\n:put "ERROR: ${e.message.replace(/"/g, '')}"`;
+  }
+
+  res.type("text/plain").send(report);
 });
 
 // GET /v1/:slug/report
@@ -2550,6 +2433,7 @@ router.get("/v1/:slug/sync", async (req, res) => {
     if (tenant) {
       try {
         await getDb().query("UPDATE routers SET provision_status = 'online', updated_at = CURRENT_TIMESTAMP WHERE tenant_id = $1 AND provision_status != 'offline'", [tenant.id]);
+        repairCredentials(tenant.id, slug).catch(() => {});
       } catch (e) {}
     }
     res.type("text/plain").send(':log info "[Billing] Sync OK"');
@@ -2852,12 +2736,17 @@ router.get("/v1/scripts/sync", async (req, res) => {
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const apiKey = authHeader.split(" ")[1];
       const db = getDb();
+      const token = apiKey.substring(0, 16);
       await db
         .query(
           `UPDATE routers SET provision_status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id IN (SELECT router_id FROM provision_logs WHERE token = $1 AND router_id IS NOT NULL ORDER BY created_at DESC LIMIT 1)`,
-          [apiKey.substring(0, 16)],
+          [token],
         )
         .catch(() => {});
+      const tenant = await findTenantBySlugOrKey(token, null);
+      if (tenant) {
+        repairCredentials(tenant.id, token).catch(() => {});
+      }
     }
   } catch (e) {}
   res.type("text/plain").send(':log info "[Billing] Sync OK"');
