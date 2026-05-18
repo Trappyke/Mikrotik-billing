@@ -344,6 +344,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             onClick={() => setBillingOpen(!billingOpen)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full transition-all hover:bg-zinc-800/40"
             style={{ color: "var(--sidebar-item-text)" }}
+          >
             <DollarSign className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="flex-1 text-left">Billing</span>
             {billingOpen ? (

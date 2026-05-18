@@ -148,9 +148,6 @@
     --ease-in-out-cubic: cubic-bezier(0.65, 0, 0.35, 1);
     --ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
-    --ease-in-out-cubic: cubic-bezier(0.65, 0, 0.35, 1);
-    --ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
 
 /* Theme: Emerald Green */
 [data-theme="emerald"] {
