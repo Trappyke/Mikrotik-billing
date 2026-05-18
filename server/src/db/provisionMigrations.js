@@ -149,8 +149,8 @@ const provisioningMigrations = [
   `CREATE INDEX IF NOT EXISTS idx_provision_logs_router ON provision_logs(router_id)`,
   `CREATE INDEX IF NOT EXISTS idx_provision_events_router ON provision_events(router_id)`,
 
-  // Add tenant_id to routers for reliable tenant-based lookup
-  `ALTER TABLE routers ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE SET NULL`,
+  // Add tenant_id to routers without FK (FK is applied in tenant migrations after tenants table exists)
+  `ALTER TABLE routers ADD COLUMN IF NOT EXISTS tenant_id UUID`,
   `CREATE INDEX IF NOT EXISTS idx_routers_tenant_id ON routers(tenant_id)`,
 ];
 

@@ -50,6 +50,25 @@ const tenantMigrations = [
   `CREATE INDEX IF NOT EXISTS idx_mikrotik_tenant ON mikrotik_connections(tenant_id)`,
   `UPDATE mikrotik_connections SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL`,
 
+  // ─── Add tenant_id FK to routers (column created by provisioning migrations) ───
+  `DO $$ BEGIN
+     IF EXISTS (
+       SELECT 1
+       FROM information_schema.tables
+       WHERE table_name = 'routers'
+     )
+     AND NOT EXISTS (
+       SELECT 1
+       FROM information_schema.table_constraints
+       WHERE table_name = 'routers'
+         AND constraint_name = 'fk_routers_tenant'
+     ) THEN
+       ALTER TABLE routers
+       ADD CONSTRAINT fk_routers_tenant
+       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL;
+     END IF;
+   END $$`,
+
   // ─── Add tenant_id to service_plans ───
   `ALTER TABLE service_plans ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
   `CREATE INDEX IF NOT EXISTS idx_service_plans_tenant ON service_plans(tenant_id)`,
