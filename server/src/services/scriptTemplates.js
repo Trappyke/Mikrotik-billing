@@ -280,8 +280,65 @@ function buildInstallScript(config) {
   return lines.join("\n");
 }
 
+function buildVpnScript({ serverAddress, serverPort, username, password, routerIdentity, fetchMode }) {
+  const host = esc(serverAddress);
+  const user = esc(username);
+  const pass = esc(password);
+  const port = serverPort || "443";
+  const name = (routerIdentity || "mikrotik-router").replace(/\s+/g, "-").toLowerCase();
+  const mode = fetchMode === "https" ? "https" : "http";
+  const certFlag = mode === "https" ? "check-certificate=no" : "";
+  const enableCert = mode === "https" ? "verify-server-certificate=no" : "";
+
+  return [
+    "#############################################",
+    "# ISP Billing — Remote Winbox / SSTP VPN",
+    `# Router: ${esc(routerIdentity || 'Unknown')}`,
+    "#############################################",
+    "",
+    "# ── SSTP VPN Client ──",
+    ":do {",
+    "  /interface sstp-client remove [find comment=\"ISP Remote Access\"]",
+    "} on-error={}",
+    "",
+    ":do {",
+    `  /interface sstp-client add \\`,
+    `    name="sstp-isp" \\`,
+    `    connect-to=${host}:${port} \\`,
+    `    user="${user}" \\`,
+    `    password="${pass}" \\`,
+    `    profile=default-encryption \\`,
+    `    ${enableCert} \\`,
+    `    comment="ISP Remote Access" \\`,
+    `    disabled=no`,
+    "} on-error={ :put \"[VPN] SSTP client added or already exists\" }",
+    "",
+    `:put "[VPN] Connecting to ${host}:${port} as ${user}..."`,
+    ":delay 3s",
+    "",
+    ":local vpnStatus [/interface sstp-client get [find name=sstp-isp] running]",
+    ':if ($vpnStatus) do={',
+    '  :put "[VPN] CONNECTED — SSTP tunnel active"',
+    `  :put "[VPN] Server: ${host}:${port}"`,
+    `  :put "[VPN] Router accessible via SSTP tunnel"`,
+    "} else={",
+    '  :put "[VPN] FAILED — Check server address and credentials"',
+    `  :put "[VPN] Verify: ${host}:${port} is reachable and ${user} has SSTP access"`,
+    "}",
+    "",
+    `:put ""`,
+    `:put "[VPN] To disconnect: /interface sstp-client set [find name=sstp-isp] disabled=yes"`,
+    `:put "[VPN] To reconnect: /interface sstp-client set [find name=sstp-isp] disabled=no"`,
+    `:put ""`,
+    `:put "[VPN] Once connected, Winbox to the router's LAN IP through the VPN"`,
+    `:put "[VPN] Default LAN: " . [/ip address get [find interface=bridge1] address]`,
+    "",
+  ].join("\n");
+}
+
 module.exports = {
   buildInstallScript,
+  buildVpnScript,
   wanDetectionLines,
   configurationLines,
   firewallLines,

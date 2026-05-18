@@ -1104,6 +1104,51 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Remote Access VPN */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wifi className="w-5 h-5" /> Remote Access VPN
+              </CardTitle>
+              <CardDescription>
+                SSTP VPN server that routers will connect to for remote Winbox
+                access. Leave blank to disable.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="vpn-server">SSTP Server Address</Label>
+                <Input
+                  id="vpn-server"
+                  type="text"
+                  value={settings.vpn_server_address || ""}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      vpn_server_address: e.target.value,
+                    })
+                  }
+                  placeholder="vpn.yourcompany.com"
+                />
+              </div>
+              <div>
+                <Label htmlFor="vpn-port">SSTP Server Port</Label>
+                <Input
+                  id="vpn-port"
+                  type="number"
+                  value={settings.vpn_server_port || "443"}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      vpn_server_port: e.target.value,
+                    })
+                  }
+                  placeholder="443"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Save Button */}
           <div className="flex justify-end">
             <Button

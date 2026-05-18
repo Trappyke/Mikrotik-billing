@@ -42,6 +42,9 @@ export default function RoutersPage() {
   const [watchAttempts, setWatchAttempts] = useState(0);
   const [watchRemaining, setWatchRemaining] = useState(0);
   const watchIntervalRef = React.useRef(null);
+  const [vpnModal, setVpnModal] = useState(null);
+  const [vpnCopied, setVpnCopied] = useState(false);
+  const [vpnLoading, setVpnLoading] = useState(false);
 
   useEffect(() => { fetchTenant(); return () => stopWatching(); }, []);
 
@@ -85,6 +88,36 @@ export default function RoutersPage() {
     } catch (e) {
       toast.error(e.response?.data?.error || "Delete failed");
     } finally { setDeleting(null); }
+  };
+
+  const openVpnModal = async (router, slug) => {
+    setVpnModal({ router, slug });
+    setVpnCopied(false);
+    setVpnLoading(true);
+    try {
+      const token = getToken();
+      const { data } = await axios.get(`${API}/settings`);
+      const addr = data.vpn_server_address;
+      if (!addr) {
+        setVpnModal({ router, slug, noServer: true });
+      }
+    } catch (e) {
+      setVpnModal({ router, slug, noServer: true });
+    } finally { setVpnLoading(false); }
+  };
+
+  const getVpnCommand = () => {
+    if (!vpnModal) return "";
+    const { slug } = vpnModal;
+    const origin = window.location.origin;
+    const token = getToken();
+    return `/tool fetch url="${origin}/api/router/v1/${slug}/scripts/vpn" http-header-field="Authorization: Bearer ${token || 'YOUR_API_KEY'}" dst-path="vpn.rsc" mode=https check-certificate=no; :delay 2s; /import file-name="vpn.rsc"; :delay 1s; /file remove "vpn.rsc"`;
+  };
+
+  const copyVpnCmd = () => {
+    navigator.clipboard.writeText(getVpnCommand());
+    setVpnCopied(true);
+    setTimeout(() => setVpnCopied(false), 3000);
   };
 
   // Watch session
@@ -229,6 +262,13 @@ export default function RoutersPage() {
                         {r.linked_mikrotik_connection_id ? 'managed' : 'unmanaged'}
                       </span>
                       <button
+                        onClick={() => openVpnModal(r, tenantSlug)}
+                        className="p-1.5 rounded-lg text-zinc-600 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                        title="Remote Winbox"
+                      >
+                        <Plug className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => deleteRouter(r.id, r.name)}
                         disabled={deleting === r.id}
                         className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
@@ -334,6 +374,62 @@ export default function RoutersPage() {
               </CardContent>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Remote Winbox VPN Modal */}
+      {vpnModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-zinc-700/50 rounded-2xl w-full max-w-lg">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Plug className="w-5 h-5 text-blue-400" />
+                Remote Winbox — {vpnModal.router?.name || "Router"}
+              </h3>
+              <button onClick={() => setVpnModal(null)} className="text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {vpnLoading ? (
+                <p className="text-zinc-400">Loading...</p>
+              ) : vpnModal.noServer ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                  <p className="text-amber-300 text-sm font-medium mb-2">VPN server not configured</p>
+                  <p className="text-amber-400/80 text-xs">
+                    Configure the SSTP VPN server address in Settings &gt; General &gt; Remote Access VPN.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                    <p className="text-blue-300 text-sm font-medium mb-1">SSTP VPN Client</p>
+                    <p className="text-blue-400/80 text-xs">
+                      Establishes a secure tunnel from the router to your VPN server, enabling remote Winbox access even through NAT and firewalls.
+                    </p>
+                  </div>
+
+                  <div className="bg-zinc-800/50 rounded-lg p-4">
+                    <p className="text-zinc-400 text-xs mb-2 font-medium">INSTRUCTIONS</p>
+                    <ol className="text-zinc-300 text-sm space-y-1 list-decimal pl-4">
+                      <li>Copy the command</li>
+                      <li>Paste it into your router's terminal</li>
+                      <li>Press Enter</li>
+                    </ol>
+                  </div>
+
+                  <pre className="bg-zinc-950 border border-zinc-700/50 rounded-lg p-4 text-sm text-green-400 font-mono overflow-x-auto whitespace-pre-wrap">
+                    {getVpnCommand()}
+                  </pre>
+
+                  <Button onClick={copyVpnCmd} className="gap-2 w-full">
+                    {vpnCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {vpnCopied ? "Copied!" : "Copy Command"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

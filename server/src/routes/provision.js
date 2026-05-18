@@ -1994,6 +1994,53 @@ router.get("/v1/:slug/install", async (req, res) => {
   }
 });
 
+// GET /v1/:slug/scripts/vpn — generate SSTP VPN client script
+router.get("/v1/:slug/scripts/vpn", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const authHeader = req.headers.authorization;
+    const apiKey = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1] : "";
+
+    const tenant = await findTenantBySlugOrKey(slug, apiKey);
+    if (!tenant) {
+      return res.status(403).type("text/plain").send("# ERROR: Invalid tenant or API key");
+    }
+
+    const db = getDb();
+    const settingsRes = await db.query("SELECT value FROM settings WHERE key = $1", ["vpn_server_address"]).catch(() => ({ rows: [] }));
+    const serverAddress = settingsRes.rows[0]?.value || process.env.VPN_SERVER_ADDRESS || req.query.address || "";
+    const serverPort = process.env.VPN_SERVER_PORT || req.query.port || "443";
+
+    if (!serverAddress) {
+      return res.type("text/plain").send([
+        ":put \"=== VPN Setup Required ===\"",
+        ":put \"Configure the VPN server address in:\"",
+        ":put \"  Settings > General > Remote Access VPN\"",
+      ].join("\n"));
+    }
+
+    const username = req.query.user || tenant.settings?.vpn_username || `isp-${slug}`;
+    const password = req.query.pass || tenant.settings?.vpn_password || apiKey.substring(0, 16);
+    const identity = tenant.name || slug;
+    const isHttps = (process.env.APP_URL || "").startsWith("https");
+    const fetchMode = isHttps ? "https" : "http";
+
+    const scriptTemplates = require("../services/scriptTemplates");
+    const script = scriptTemplates.buildVpnScript({
+      serverAddress,
+      serverPort,
+      username,
+      password,
+      routerIdentity: identity,
+      fetchMode,
+    });
+
+    res.type("text/plain").send(script);
+  } catch (error) {
+    res.status(500).type("text/plain").send("# ERROR: Internal server error");
+  }
+});
+
 // GET /v1/:slug/health — lightweight diagnostic for routers to self-check
 router.get("/v1/:slug/health", async (req, res) => {
   const { slug } = req.params;
