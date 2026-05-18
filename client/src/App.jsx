@@ -167,7 +167,7 @@ function App() {
                   <div className="lg:hidden flex items-center justify-between p-4 border-b border-zinc-800/50">
                     <button
                       onClick={() => setMobileMenuOpen(true)}
-                      className="text-zinc-400"
+                      className="text-zinc-400 p-3 -m-1"
                     >
                       <Menu className="w-5 h-5" />
                     </button>
