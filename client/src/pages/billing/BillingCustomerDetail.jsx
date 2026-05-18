@@ -17,6 +17,9 @@ import {
   ExternalLink,
   RefreshCw,
   Send,
+  Wifi,
+  Shield,
+  AlertTriangle,
 } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
 
@@ -345,6 +348,32 @@ export function BillingCustomerDetail() {
                         </span>
                       )}
                     </div>
+                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                      <span
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                          sub.last_sync_status === "synced"
+                            ? "bg-green-600/20 text-green-400"
+                            : "bg-amber-600/20 text-amber-400"
+                        }`}
+                        title={`API: ${sub.last_sync_status || "never"}${sub.last_sync_error ? " — " + sub.last_sync_error : ""}`}
+                      >
+                        <Wifi className="w-3 h-3" />
+                        {sub.last_sync_status || "not synced"}
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-600/20 text-slate-400`}
+                        title="RADIUS sync status"
+                      >
+                        <Shield className="w-3 h-3" />
+                        RADIUS
+                      </span>
+                    </div>
+                    {sub.last_sync_error && (
+                      <div className="flex items-start gap-1 mt-1 text-xs text-amber-300">
+                        <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+                        <span className="truncate">{sub.last_sync_error}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

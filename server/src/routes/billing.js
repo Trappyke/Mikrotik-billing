@@ -26,6 +26,7 @@ const db = global.dbAvailable ? global.db : require("../db/memory");
 const MpesaService = require("../services/mpesa");
 const alertSystem = require("../services/alertSystem");
 const mikrotikProvisioning = require("../services/mikrotikProvisioning");
+const radiusSync = require("../services/radiusSync");
 const slack = require("../services/slackNotifier");
 
 async function getExpandedSubscription(subscriptionId) {
@@ -54,6 +55,21 @@ async function persistSyncState(subscriptionId, syncResult) {
   return billing.getSubscriptionById(subscriptionId);
 }
 
+async function persistRadiusSyncState(subscriptionId, radiusResult) {
+  if (!subscriptionId || !radiusResult) return null;
+
+  const payload = {
+    last_radius_sync_status:
+      radiusResult.status || (radiusResult.success ? "synced" : "failed"),
+    last_radius_sync_error: radiusResult.success
+      ? null
+      : radiusResult.error || "Unknown RADIUS error",
+  };
+
+  await billing.updateSubscription(subscriptionId, payload);
+  return billing.getSubscriptionById(subscriptionId);
+}
+
 function buildProvisionScriptFallback(action, subscription) {
   if (!subscription?.pppoe_username) {
     return null;
@@ -63,13 +79,10 @@ function buildProvisionScriptFallback(action, subscription) {
 }
 
 async function syncSubscription(action, subscription) {
-  if (!subscription?.auto_provision || !subscription?.pppoe_username) {
+  if (!subscription?.pppoe_username) {
     return {
-      syncResult: {
-        success: false,
-        status: "skipped",
-        error: "Auto provisioning is disabled or PPPoE username is missing",
-      },
+      syncResult: { success: false, status: "skipped", error: "PPPoE username is missing" },
+      radiusResult: null,
       provisionScript: null,
     };
   }
@@ -85,47 +98,61 @@ async function syncSubscription(action, subscription) {
     subscription,
   );
 
-  if (!subscription.mikrotik_connection_id) {
-    return {
-      syncResult: {
-        success: false,
-        status: "skipped",
-        error: "No MikroTik connection linked to this subscription",
-      },
-      provisionScript: fallbackScript,
-    };
-  }
+  let syncResult = null;
+  let radiusResult = null;
 
-  try {
-    let syncResult;
-    if (action === "delete") {
-      syncResult =
-        await mikrotikProvisioning.deleteSubscriptionSecret(subscription);
-    } else if (action === "suspend") {
-      syncResult =
-        await mikrotikProvisioning.suspendSubscriptionSecret(subscription);
-    } else {
-      syncResult =
-        await mikrotikProvisioning.reconcileSubscription(subscription);
+  const radiusEnabled = await radiusSync.isRadiusEnabled();
+  if (radiusEnabled) {
+    try {
+      if (action === "delete") {
+        radiusResult = await radiusSync.deleteRadiusUser(subscription);
+      } else {
+        radiusResult = await radiusSync.reconcileRadiusUser(subscription);
+      }
+    } catch (radiusError) {
+      radiusResult = { success: false, status: "failed", error: radiusError.message };
     }
-
-    await persistSyncState(subscription.id, syncResult);
-    return {
-      syncResult,
-      provisionScript: syncResult.success ? null : fallbackScript,
-    };
-  } catch (error) {
-    const failedSync = {
-      success: false,
-      status: "failed",
-      error: error.message,
-    };
-    await persistSyncState(subscription.id, failedSync);
-    return {
-      syncResult: failedSync,
-      provisionScript: fallbackScript,
-    };
   }
+
+  if (subscription.mikrotik_connection_id && subscription.auto_provision !== false) {
+    try {
+      if (action === "delete") {
+        syncResult = await mikrotikProvisioning.deleteSubscriptionSecret(subscription);
+      } else if (action === "suspend") {
+        syncResult = await mikrotikProvisioning.suspendSubscriptionSecret(subscription);
+      } else {
+        syncResult = await mikrotikProvisioning.reconcileSubscription(subscription);
+      }
+    } catch (error) {
+      syncResult = { success: false, status: "failed", error: error.message };
+    }
+  } else if (!subscription.mikrotik_connection_id) {
+    syncResult = { success: false, status: "skipped", error: "No MikroTik connection linked to this subscription" };
+  } else {
+    syncResult = { success: false, status: "skipped", error: "Auto provisioning is disabled" };
+  }
+
+  const combinedSuccess = syncResult?.success || radiusResult?.success;
+  const combinedStatus = combinedSuccess ? "synced"
+    : (syncResult?.status === "failed" || radiusResult?.status === "failed") ? "failed"
+    : "skipped";
+  const combinedError = [syncResult?.error, radiusResult?.error].filter(Boolean).join(" | ") || null;
+
+  await persistSyncState(subscription.id, {
+    success: combinedSuccess,
+    status: combinedStatus,
+    error: combinedError,
+  });
+
+  if (radiusResult) {
+    await persistRadiusSyncState(subscription.id, radiusResult);
+  }
+
+  return {
+    syncResult,
+    radiusResult,
+    provisionScript: combinedSuccess ? null : fallbackScript,
+  };
 }
 
 function normalizeDisabledFlag(value) {
@@ -662,7 +689,7 @@ router.post("/subscriptions", async (req, res) => {
     }
 
     const expandedSub = await getExpandedSubscription(sub.id);
-    const { syncResult, provisionScript } = await syncSubscription(
+    const { syncResult, radiusResult, provisionScript } = await syncSubscription(
       "reconcile",
       { ...expandedSub, plan },
     );
@@ -671,6 +698,7 @@ router.post("/subscriptions", async (req, res) => {
       ...expandedSub,
       provision_script: provisionScript,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -685,13 +713,14 @@ router.put("/subscriptions/:id", async (req, res) => {
     const shouldSync =
       req.body.auto_provision !== false &&
       (req.body.pppoe_username || expandedSub.pppoe_username);
-    const { syncResult, provisionScript } = shouldSync
+    const { syncResult, radiusResult, provisionScript } = shouldSync
       ? await syncSubscription("reconcile", expandedSub)
-      : { syncResult: null, provisionScript: null };
+      : { syncResult: null, radiusResult: null, provisionScript: null };
     res.json({
       ...expandedSub,
       provision_script: provisionScript,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -705,7 +734,7 @@ router.post("/subscriptions/:id/toggle", async (req, res) => {
 
     const expandedSub = await getExpandedSubscription(sub.id);
     const action = expandedSub.status === "active" ? "reconcile" : "suspend";
-    const { syncResult, provisionScript } = await syncSubscription(
+    const { syncResult, radiusResult, provisionScript } = await syncSubscription(
       action,
       expandedSub,
     );
@@ -735,6 +764,7 @@ router.post("/subscriptions/:id/toggle", async (req, res) => {
       ...expandedSub,
       provision_script: provisionScript,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -746,7 +776,7 @@ router.post("/subscriptions/:id/sync", async (req, res) => {
     const sub = await getExpandedSubscription(req.params.id);
     if (!sub) return res.status(404).json({ error: "Subscription not found" });
 
-    const { syncResult, provisionScript } = await syncSubscription(
+    const { syncResult, radiusResult, provisionScript } = await syncSubscription(
       "reconcile",
       sub,
     );
@@ -755,6 +785,7 @@ router.post("/subscriptions/:id/sync", async (req, res) => {
       ...refreshed,
       provision_script: provisionScript,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -894,7 +925,7 @@ router.post("/reconcile/subscriptions/:id/apply", async (req, res) => {
     const sub = await getExpandedSubscription(req.params.id);
     if (!sub) return res.status(404).json({ error: "Subscription not found" });
 
-    const { syncResult, provisionScript } = await syncSubscription(
+    const { syncResult, radiusResult, provisionScript } = await syncSubscription(
       "reconcile",
       sub,
     );
@@ -902,6 +933,7 @@ router.post("/reconcile/subscriptions/:id/apply", async (req, res) => {
     res.json({
       subscription: refreshed,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
       provision_script: provisionScript,
     });
   } catch (e) {
@@ -1015,10 +1047,12 @@ router.delete("/subscriptions/:id", async (req, res) => {
   try {
     const existing = await getExpandedSubscription(req.params.id);
     let syncResult = null;
+    let radiusResult = null;
     let provisionScript = null;
     if (existing) {
       const syncOutcome = await syncSubscription("delete", existing);
       syncResult = syncOutcome.syncResult;
+      radiusResult = syncOutcome.radiusResult;
       provisionScript = syncOutcome.provisionScript;
     }
     const deleted = await billing.deleteSubscription(req.params.id);
@@ -1027,6 +1061,7 @@ router.delete("/subscriptions/:id", async (req, res) => {
     res.json({
       success: true,
       mikrotik_sync: syncResult,
+      radius_sync: radiusResult,
       provision_script: provisionScript,
     });
   } catch (e) {

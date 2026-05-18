@@ -56,6 +56,8 @@ const billingMigrations = [
     last_synced_at TIMESTAMP,
     last_sync_status VARCHAR(30),
     last_sync_error TEXT,
+    last_radius_sync_status VARCHAR(30),
+    last_radius_sync_error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -249,6 +251,8 @@ const billingMigrations = [
   `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP`,
   `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_sync_status VARCHAR(30)`,
   `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_sync_error TEXT`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_radius_sync_status VARCHAR(30)`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_radius_sync_error TEXT`,
   `DO $$
   BEGIN
     IF EXISTS (

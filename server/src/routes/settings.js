@@ -349,6 +349,22 @@ router.put("/", async (req, res) => {
   }
 });
 
+// Set a single setting key
+router.post("/", async (req, res) => {
+  const { key, value } = req.body;
+  if (!key) {
+    return res.status(400).json({ error: "Key is required" });
+  }
+
+  try {
+    await setSetting(key, value);
+    res.json({ success: true, key, value });
+  } catch (error) {
+    console.error("Error setting value:", error);
+    res.status(500).json({ error: "Failed to set value" });
+  }
+});
+
 const REMOVED_FEATURES = ["topology", "router-linking", "devices", "templates", "mikrotik-api"];
 // Get permissions
 router.get("/permissions", (req, res) => { const cleaned = {}; for (const [role, features] of Object.entries(featureAccessStore)) { cleaned[role] = features.filter(f => !REMOVED_FEATURES.includes(f)); } res.json(cleaned);

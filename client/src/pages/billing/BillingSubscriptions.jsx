@@ -10,6 +10,10 @@ import {
   Pencil,
   Trash2,
   X,
+  AlertTriangle,
+  RefreshCw,
+  Wifi,
+  Shield,
 } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
 import { Button } from "../../components/ui/button";
@@ -74,11 +78,14 @@ export function BillingSubscriptions() {
       toast.success(successMessage);
     }
     if (data?.mikrotik_sync?.success) {
-      toast.success(
-        data.mikrotik_sync.message || "MikroTik synced successfully",
-      );
-    } else if (data?.mikrotik_sync?.error) {
+      toast.success("MikroTik API: " + (data.mikrotik_sync.message || "Synced"));
+    } else if (data?.mikrotik_sync?.error && data?.mikrotik_sync?.status !== "skipped") {
       toast.error("MikroTik sync failed", data.mikrotik_sync.error);
+    }
+    if (data?.radius_sync?.success) {
+      toast.success("RADIUS: " + (data.radius_sync.message || "Synced"));
+    } else if (data?.radius_sync?.error && data?.radius_sync?.status !== "skipped") {
+      toast.error("RADIUS sync failed", data.radius_sync.error);
     }
     if (data?.provision_script) {
       setShowScript(data.provision_script);
@@ -250,15 +257,32 @@ export function BillingSubscriptions() {
                   </span>
                 </div>
                 <div className="text-zinc-400">
-                  Sync:{" "}
+                  Started: <span className="text-white">{sub.start_date}</span>
+                </div>
+                <div className="col-span-2 text-zinc-400 flex items-center gap-3">
+                  <span>Sync:</span>
                   <span
-                    className={`${sub.last_sync_status === "synced" ? "text-green-400" : sub.last_sync_status ? "text-amber-400" : "text-slate-400"}`}
+                    className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
+                      sub.last_sync_status === "synced"
+                        ? "bg-green-600/20 text-green-400"
+                        : "bg-amber-600/20 text-amber-400"
+                    }`}
+                    title={`API: ${sub.last_sync_status || "never"}${sub.last_sync_error ? " — " + sub.last_sync_error : ""}`}
                   >
+                    <Wifi className="w-3 h-3" />
                     {sub.last_sync_status || "not synced"}
                   </span>
-                </div>
-                <div className="text-zinc-400">
-                  Started: <span className="text-white">{sub.start_date}</span>
+                  <span
+                    className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
+                      sub.last_radius_sync_status === "synced"
+                        ? "bg-blue-600/20 text-blue-400"
+                        : "bg-slate-600/20 text-slate-400"
+                    }`}
+                    title={`RADIUS: ${sub.last_radius_sync_status || "disabled"}${sub.last_radius_sync_error ? " — " + sub.last_radius_sync_error : ""}`}
+                  >
+                    <Shield className="w-3 h-3" />
+                    RADIUS
+                  </span>
                 </div>
                 <div className="text-zinc-400">
                   Cycle:{" "}
@@ -268,8 +292,11 @@ export function BillingSubscriptions() {
                 </div>
               </CardContent>
               {sub.last_sync_error && (
-                <CardContent className="pt-0 pb-4 text-xs text-amber-300">
-                  {sub.last_sync_error}
+                <CardContent className="pt-0 pb-2 border-t border-amber-600/30 bg-amber-600/5">
+                  <div className="flex items-start gap-2 text-xs text-amber-300">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                    <span>{sub.last_sync_error}</span>
+                  </div>
                 </CardContent>
               )}
               <CardContent className="p-4 border-t border-zinc-800 flex gap-2">

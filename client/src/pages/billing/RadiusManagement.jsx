@@ -3,7 +3,8 @@ import axios from 'axios';
 import {
   Server, Users, Activity, Plus, Search, Trash2, Pencil, RefreshCw,
   Shield, Database, Clock, Eye, EyeOff, Copy, Check, Settings,
-  ArrowUpRight, ArrowDownRight, Zap, UserCheck, UserX, FileText
+  ArrowUpRight, ArrowDownRight, Zap, UserCheck, UserX, FileText,
+  ToggleLeft, ToggleRight,
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || '/api';
@@ -66,6 +67,8 @@ export function RadiusManagement() {
   const [activeTab, setActiveTab] = useState('users');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [radiusProvisioningEnabled, setRadiusProvisioningEnabled] = useState(false);
+  const [togglingRadius, setTogglingRadius] = useState(false);
 
   // Data
   const [nasClients, setNasClients] = useState([]);
@@ -101,7 +104,29 @@ export function RadiusManagement() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); fetchRadiusProvisioningSetting(); }, []);
+
+  const fetchRadiusProvisioningSetting = async () => {
+    try {
+      const { data } = await axios.get(`${API}/settings`);
+      setRadiusProvisioningEnabled(data.radius_provisioning_enabled === 'true');
+    } catch (e) { /* ignore */ }
+  };
+
+  const toggleRadiusProvisioning = async () => {
+    setTogglingRadius(true);
+    const newValue = !radiusProvisioningEnabled;
+    try {
+      await axios.post(`${API}/settings`, {
+        key: 'radius_provisioning_enabled',
+        value: String(newValue),
+      });
+      setRadiusProvisioningEnabled(newValue);
+    } catch (e) {
+      alert('Failed to toggle RADIUS provisioning');
+    }
+    setTogglingRadius(false);
+  };
 
   // NAS
   const handleNasSubmit = async (form) => {
@@ -183,6 +208,19 @@ export function RadiusManagement() {
           <p className="text-zinc-400 mt-1">FreeRADIUS user authentication, accounting, and MikroTik NAS integration</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleRadiusProvisioning}
+            disabled={togglingRadius}
+            className={`flex items-center gap-2 text-xs py-2 px-3 rounded-xl border transition-all ${
+              radiusProvisioningEnabled
+                ? 'bg-violet-500/20 border-violet-500/30 text-violet-300 hover:bg-violet-500/30'
+                : 'bg-zinc-800/60 border-zinc-700/30 text-zinc-400 hover:text-zinc-200'
+            }`}
+            title={radiusProvisioningEnabled ? 'Auto-provision to RADIUS is ENABLED' : 'Auto-provision to RADIUS is DISABLED'}
+          >
+            {radiusProvisioningEnabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+            RADIUS Provisioning {radiusProvisioningEnabled ? 'ON' : 'OFF'}
+          </button>
           <button onClick={handleSync} className="btn-secondary text-xs py-2 px-3">
             <RefreshCw className="w-3.5 h-3.5" /> Sync from Billing
           </button>

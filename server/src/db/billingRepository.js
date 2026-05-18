@@ -269,8 +269,8 @@ const subscriptions = {
     const id = uuidv4();
     const result = await db.query(
       `INSERT INTO subscriptions (id, customer_id, plan_id, router_id, mikrotik_connection_id, pppoe_username, pppoe_password,
-       mac_address, mac_binding_enabled, pppoe_profile, status, start_date, end_date, billing_cycle, auto_provision, last_synced_at, last_sync_status, last_sync_error)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+       mac_address, mac_binding_enabled, pppoe_profile, status, start_date, end_date, billing_cycle, auto_provision, last_synced_at, last_sync_status, last_sync_error, last_radius_sync_status, last_radius_sync_error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`,
       [
         id,
         data.customer_id,
@@ -290,6 +290,8 @@ const subscriptions = {
         data.last_synced_at || null,
         data.last_sync_status || null,
         data.last_sync_error || null,
+        data.last_radius_sync_status || null,
+        data.last_radius_sync_error || null,
       ],
     );
     if (userId)
@@ -315,7 +317,8 @@ const subscriptions = {
        mikrotik_connection_id = COALESCE($9, mikrotik_connection_id), router_id = COALESCE($10, router_id),
        pppoe_profile = COALESCE($11, pppoe_profile), last_synced_at = COALESCE($12, last_synced_at),
        last_sync_status = COALESCE($13, last_sync_status), last_sync_error = $14,
-       updated_at = CURRENT_TIMESTAMP WHERE id = $15 RETURNING *`,
+       last_radius_sync_status = COALESCE($15, last_radius_sync_status), last_radius_sync_error = $16,
+       updated_at = CURRENT_TIMESTAMP WHERE id = $17 RETURNING *`,
       [
         data.status,
         data.pppoe_username,
@@ -333,6 +336,10 @@ const subscriptions = {
         data.last_sync_error !== undefined
           ? data.last_sync_error
           : existing.last_sync_error,
+        data.last_radius_sync_status || null,
+        data.last_radius_sync_error !== undefined
+          ? data.last_radius_sync_error
+          : existing.last_radius_sync_error,
         id,
       ],
     );
