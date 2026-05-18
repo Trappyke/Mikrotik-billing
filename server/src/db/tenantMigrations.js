@@ -58,15 +58,22 @@ const tenantMigrations = [
        WHERE table_name = 'routers'
          AND table_schema = 'public'
      )
+     AND EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_name = 'routers'
+         AND table_schema = 'public'
+         AND column_name = 'tenant_id'
+     )
      AND NOT EXISTS (
        SELECT 1
        FROM information_schema.table_constraints
        WHERE table_name = 'routers'
          AND table_schema = 'public'
-         AND constraint_name = 'fk_routers_tenant'
+         AND constraint_name = 'fk_routers_tenants'
      ) THEN
        ALTER TABLE routers
-       ADD CONSTRAINT fk_routers_tenant
+       ADD CONSTRAINT fk_routers_tenants
        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL;
      END IF;
    END $$`,
