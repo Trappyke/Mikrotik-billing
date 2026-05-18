@@ -56,11 +56,13 @@ const tenantMigrations = [
        SELECT 1
        FROM information_schema.tables
        WHERE table_name = 'routers'
+         AND table_schema = 'public'
      )
      AND NOT EXISTS (
        SELECT 1
        FROM information_schema.table_constraints
        WHERE table_name = 'routers'
+         AND table_schema = 'public'
          AND constraint_name = 'fk_routers_tenant'
      ) THEN
        ALTER TABLE routers
