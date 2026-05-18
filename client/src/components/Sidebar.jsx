@@ -254,9 +254,20 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
   };
 
   return (
-    <aside className="relative z-10 w-64 flex flex-col bg-[#09090b]/95 backdrop-blur-xl border-r border-zinc-800/50">
+    <aside
+      className="relative z-10 w-64 flex flex-col border-r"
+      style={{
+        backgroundColor: "var(--sidebar-bg)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        borderColor: "var(--sidebar-border)",
+      }}
+    >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-zinc-800/50">
+      <div
+        className="h-16 flex items-center justify-between px-4"
+        style={{ borderBottom: `1px solid var(--sidebar-border)` }}
+      >
         <NavLink to="/" className="flex items-center gap-3">
           {branding.company_logo ? (
             <img
@@ -265,8 +276,14 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
               className="w-8 h-8 rounded-lg object-cover"
             />
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <Building2 className="w-4 h-4 text-white" />
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{
+                background: "var(--sidebar-item-active-bg, rgba(79,70,229,0.1))",
+                boxShadow: "0 0 12px var(--sidebar-active-glow, rgba(79,70,229,0.2))"
+              }}
+            >
+              <Building2 className="w-4 h-4" style={{ color: "var(--sidebar-icon-color, #fff)" }} />
             </div>
           )}
           <div>
@@ -281,9 +298,10 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         <SearchButton onClick={onSearchOpen} />
         <button
           onClick={onCloseMobile}
-          className="lg:hidden p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
-        >
-          <X className="w-4 h-4" />
+            className="lg:hidden p-1.5 rounded-lg transition-colors"
+            style={{ color: "var(--sidebar-item-text, #a1a1aa)" }}
+          >
+            <X className="w-4 h-4" />
         </button>
       </div>
 
@@ -297,12 +315,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
               to={item.to}
               end={item.to === "/"}
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
@@ -313,11 +330,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         {/* Divider - only show if user has billing access */}
         {billingItems.some((item) => canAccessFeature(user, item.feature)) && (
           <div className="flex items-center gap-3 px-3 py-3">
-            <div className="h-px flex-1 bg-zinc-800/60" />
-            <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+            <div className="h-px flex-1" style={{ background: "var(--sidebar-divider)" }} />
+            <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--sidebar-section-label)" }}>
               Billing
             </div>
-            <div className="h-px flex-1 bg-zinc-800/60" />
+            <div className="h-px flex-1" style={{ background: "var(--sidebar-divider)" }} />
           </div>
         )}
 
@@ -325,8 +342,8 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         {billingItems.some((item) => canAccessFeature(user, item.feature)) && (
           <button
             onClick={() => setBillingOpen(!billingOpen)}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 w-full transition-all"
-          >
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full transition-all hover:bg-zinc-800/40"
+            style={{ color: "var(--sidebar-item-text)" }}
             <DollarSign className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="flex-1 text-left">Billing</span>
             {billingOpen ? (
@@ -338,7 +355,7 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         )}
 
         {billingOpen && (
-          <div className="ml-4 pl-3 border-l border-zinc-800/50 space-y-0.5">
+          <div className="ml-4 pl-3 space-y-0.5" style={{ borderLeft: `1px solid var(--sidebar-border)` }}>
             {billingItems
               .filter((item) => canAccessFeature(user, item.feature))
               .map((item) => (
@@ -346,12 +363,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
                   key={item.to}
                   to={item.to}
                   onClick={onCloseMobile}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-                      isActive
-                        ? "bg-blue-500/10 text-blue-400 font-medium"
-                        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30"
-                    }`
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200"
+                  style={({ isActive }) =>
+                    isActive
+                      ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", fontWeight: 500 }
+                      : { color: "#71717a" }
                   }
                 >
                   <item.icon className="w-4 h-4 flex-shrink-0" />
@@ -363,26 +379,25 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-zinc-800/50 space-y-2 flex-shrink-0">
+      <div className="p-3 flex-shrink-0 space-y-2" style={{ borderTop: `1px solid var(--sidebar-border)` }}>
         {/* Settings section - admin only */}
         {user?.role === "admin" && (
           <>
             <div className="flex items-center gap-3 px-3 py-2">
-              <div className="h-px flex-1 bg-zinc-800/60" />
-              <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+              <div className="h-px flex-1" style={{ background: "var(--sidebar-divider)" }} />
+              <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--sidebar-section-label)" }}>
                 Settings
               </div>
-              <div className="h-px flex-1 bg-zinc-800/60" />
+              <div className="h-px flex-1" style={{ background: "var(--sidebar-divider)" }} />
             </div>
             <NavLink
               to="/settings"
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <SettingsIcon className="w-[18px] h-[18px] flex-shrink-0" />
@@ -391,12 +406,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             <NavLink
               to="/tenant-branding"
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <Palette className="w-[18px] h-[18px] flex-shrink-0" />
@@ -405,12 +419,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             <NavLink
               to="/users"
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <Users className="w-[18px] h-[18px] flex-shrink-0" />
@@ -419,12 +432,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             <NavLink
               to="/audit-logs"
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <FileText2 className="w-[18px] h-[18px] flex-shrink-0" />
@@ -433,12 +445,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
             <NavLink
               to="/webhooks"
               onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
-                }`
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-zinc-800/40"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "var(--sidebar-item-active-bg)", color: "var(--sidebar-item-active-text)", boxShadow: "0 0 12px var(--sidebar-active-glow)" }
+                  : { color: "var(--sidebar-item-text)" }
               }
             >
               <Webhook className="w-[18px] h-[18px] flex-shrink-0" />
@@ -448,12 +459,21 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         )}
 
         {user && (
-          <div className="flex items-center gap-3 p-2 bg-zinc-800/30 rounded-lg">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-              <User className="w-4 h-4 text-white" />
+          <div
+            className="flex items-center gap-3 p-2 rounded-lg"
+            style={{ background: "var(--sidebar-user-bg)" }}
+          >
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{
+                background: "var(--sidebar-item-active-bg)",
+                color: "var(--sidebar-item-active-text)",
+              }}
+            >
+              <User className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-300 truncate">
+              <p className="text-xs font-medium truncate" style={{ color: "var(--sidebar-item-hover-text, #e4e4e7)" }}>
                 {user?.name || "User"}
               </p>
               <p className="text-xs text-zinc-500 truncate">
@@ -465,7 +485,11 @@ export function Sidebar({ onSearchOpen, onCloseMobile }) {
         )}
         <button
           onClick={() => setMode(mode === "dark" ? "light" : "dark")}
-          className="p-2 rounded-lg hover:bg-zinc-800/50 transition-colors text-zinc-400 hover:text-white"
+          className="p-2 rounded-lg transition-colors"
+          style={{
+            color: "var(--sidebar-item-text, #a1a1aa)",
+            background: "transparent",
+          }}
           title={
             mode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"
           }
