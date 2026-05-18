@@ -2335,10 +2335,8 @@ async function findRoutersByTenant(tenantId, slug) {
     const result = await db.query(
       `SELECT r.id, r.name, r.model, r.mac_address, r.ip_address,
               r.linked_mikrotik_connection_id, r.provision_status, r.updated_at,
-              CASE WHEN mc.id IS NULL THEN (r.updated_at > NOW() - INTERVAL '10 minutes')
-                   WHEN mc.is_online = true THEN true
-                   ELSE (r.updated_at > NOW() - INTERVAL '10 minutes')
-              END as is_online
+              COALESCE(mc.is_online, false) as is_online,
+              (r.updated_at > NOW() - INTERVAL '10 minutes') as is_reporting
        FROM routers r
        LEFT JOIN mikrotik_connections mc ON mc.id = r.linked_mikrotik_connection_id
        WHERE r.tenant_id = $1 AND r.provision_status = 'online'
@@ -2352,7 +2350,8 @@ async function findRoutersByTenant(tenantId, slug) {
       const result = await db.query(
         `SELECT r.id, r.name, r.model, r.mac_address, r.ip_address,
                 r.linked_mikrotik_connection_id, r.provision_status, r.updated_at,
-                COALESCE(mc.is_online, false) as is_online
+                COALESCE(mc.is_online, false) as is_online,
+                (r.updated_at > NOW() - INTERVAL '10 minutes') as is_reporting
          FROM routers r
          LEFT JOIN mikrotik_connections mc ON mc.id = r.linked_mikrotik_connection_id
          WHERE r.linked_mikrotik_connection_id IS NOT NULL

@@ -144,6 +144,12 @@ export default function RoutersPage() {
   const isLinked = connectionStatus?.connected && connectionStatus?.router?.has_connection;
   const isOnline = connectionStatus?.router?.is_online !== false;
 
+  const getRouterStatus = (r) => {
+    if (r.is_online) return { color: 'green', label: 'ONLINE', Icon: Wifi, dotClass: 'bg-green-500 shadow-lg shadow-green-500/30', badgeClass: 'bg-green-500/10 text-green-400' };
+    if (r.is_reporting) return { color: 'amber', label: 'REPORTING', Icon: Activity, dotClass: 'bg-amber-500 shadow-lg shadow-amber-500/30', badgeClass: 'bg-amber-500/10 text-amber-400' };
+    return { color: 'red', label: 'OFFLINE', Icon: WifiOff, dotClass: 'bg-red-500', badgeClass: 'bg-red-500/10 text-red-400' };
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
@@ -167,7 +173,7 @@ export default function RoutersPage() {
       {activeTab === "routers" && (
         <div className="space-y-4">
           {/* Stats bar */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <Card className="bg-zinc-900/60 border-zinc-800/50">
               <CardContent className="p-4 flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-500" />
@@ -176,13 +182,19 @@ export default function RoutersPage() {
             </Card>
             <Card className="bg-zinc-900/60 border-zinc-800/50">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <div><p className="text-2xl font-bold text-white">{routers.filter(r => !r.is_online).length}</p><p className="text-xs text-zinc-500">Offline</p></div>
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div><p className="text-2xl font-bold text-white">{routers.filter(r => r.is_reporting && !r.is_online).length}</p><p className="text-xs text-zinc-500">Reporting</p></div>
               </CardContent>
             </Card>
             <Card className="bg-zinc-900/60 border-zinc-800/50">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                <div><p className="text-2xl font-bold text-white">{routers.filter(r => !r.is_online && !r.is_reporting).length}</p><p className="text-xs text-zinc-500">Offline</p></div>
+              </CardContent>
+            </Card>
+            <Card className="bg-zinc-900/60 border-zinc-800/50">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-slate-500" />
                 <div><p className="text-2xl font-bold text-white">{routers.filter(r => !r.linked_mikrotik_connection_id).length}</p><p className="text-xs text-zinc-500">Unmanaged</p></div>
               </CardContent>
             </Card>
@@ -199,34 +211,36 @@ export default function RoutersPage() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {routers.map((r) => (
+              {routers.map((r) => {
+                const status = getRouterStatus(r);
+                return (
                 <div key={r.id} className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full ${r.is_online ? 'bg-green-500 shadow-lg shadow-green-500/30' : 'bg-red-500'}`} />
-                    <div>
-                      <p className="text-white font-medium">{r.name}</p>
-                      <p className="text-xs text-zinc-500">{r.model || "Unknown"} &middot; {r.ip_address || "no IP"} &middot; {r.mac_address || "no MAC"}</p>
+                    <div className={`w-3 h-3 rounded-full ${status.dotClass}`} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-white">{r.name || 'Unknown'}</p>
+                      <span className={`text-xs px-2 py-1 rounded-full ${status.badgeClass}`}>
+                        <status.Icon className="w-3 h-3 inline mr-1" />
+                        {status.label}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded-full ${r.linked_mikrotik_connection_id ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                        {r.linked_mikrotik_connection_id ? 'managed' : 'unmanaged'}
+                      </span>
+                      <button
+                        onClick={() => deleteRouter(r.id, r.name)}
+                        disabled={deleting === r.id}
+                        className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Delete router"
+                      >
+                        {deleting === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2 py-1 rounded-full ${r.is_online ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                      {r.is_online ? <Wifi className="w-3 h-3 inline mr-1" /> : <WifiOff className="w-3 h-3 inline mr-1" />}
-                      {r.is_online ? 'ONLINE' : 'OFFLINE'}
-                    </span>
-                    <span className={`text-xs px-2 py-1 rounded-full ${r.linked_mikrotik_connection_id ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                      {r.linked_mikrotik_connection_id ? 'managed' : 'unmanaged'}
-                    </span>
-                    <button
-                      onClick={() => deleteRouter(r.id, r.name)}
-                      disabled={deleting === r.id}
-                      className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="Delete router"
-                    >
-                      {deleting === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    </button>
-                  </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
           <div className="text-center">
