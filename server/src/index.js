@@ -126,6 +126,7 @@ function createCorsOriginHandler() {
       return callback(null, true);
     }
 
+    logger.warn("CORS request from disallowed origin", { origin });
     return callback(null, false);
   };
 }
