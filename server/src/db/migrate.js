@@ -384,6 +384,20 @@ async function runMigrations() {
       throw new Error("Integrations migration reported failure");
     }
 
+    // Run tenant migrations first (multi-tenancy) - MUST be before provisioning/unified
+    // because other tables reference tenants(id)
+    for (const migration of tenantMigrations) {
+      try {
+        await db.query(migration);
+      } catch (error) {
+        console.error(
+          "Tenant migration failed (continuing anyway):",
+          error.message,
+        );
+      }
+    }
+    console.log("Tenant migrations completed");
+
     // Run provisioning migrations (routers table)
     for (const migration of provisioningMigrations) {
       await db.query(migration);
@@ -402,19 +416,6 @@ async function runMigrations() {
       }
     }
     console.log("Unified migrations completed");
-
-    // Run tenant migrations (multi-tenancy)
-    for (const migration of tenantMigrations) {
-      try {
-        await db.query(migration);
-      } catch (error) {
-        console.error(
-          "Tenant migration failed (continuing anyway):",
-          error.message,
-        );
-      }
-    }
-    console.log("Tenant migrations completed");
 
     console.log("All migrations completed successfully");
   } catch (error) {

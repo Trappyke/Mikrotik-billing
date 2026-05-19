@@ -85,11 +85,6 @@ const tenantMigrations = [
   `CREATE INDEX IF NOT EXISTS idx_branches_tenant ON branches(tenant_id)`,
   `UPDATE branches SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL`,
 
-  // ─── Add tenant_id to agents ───
-  `ALTER TABLE agents ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
-  `CREATE INDEX IF NOT EXISTS idx_agents_tenant ON agents(tenant_id)`,
-  `UPDATE agents SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL`,
-
   // ─── Add tenant_id to captive_portals ───
   `ALTER TABLE captive_portals ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
   `CREATE INDEX IF NOT EXISTS idx_captive_portals_tenant ON captive_portals(tenant_id)`,
@@ -99,11 +94,6 @@ const tenantMigrations = [
   `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
   `CREATE INDEX IF NOT EXISTS idx_tickets_tenant ON tickets(tenant_id)`,
   `UPDATE tickets SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL`,
-
-  // ─── Add tenant_id to wallet tables ───
-  `ALTER TABLE wallets ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
-  `CREATE INDEX IF NOT EXISTS idx_wallets_tenant ON wallets(tenant_id)`,
-  `UPDATE wallets SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL`,
 ];
 
 module.exports = tenantMigrations;
